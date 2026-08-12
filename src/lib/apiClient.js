@@ -26,6 +26,12 @@ const DEFAULT_CONFIG = {
   onRequest: null,
   /** Optional observer for every response, before status handling. */
   onResponse: null,
+  /**
+   * Called with every ApiError just before it is thrown. Intentionally
+   * policy-free: the client reports, the handler decides what deserves to be
+   * surfaced.
+   */
+  onError: null,
   timeoutMs: DEFAULT_TIMEOUT_MS,
 }
 
@@ -35,14 +41,25 @@ let config = { ...DEFAULT_CONFIG }
  * Register interceptors. Returns a restore function, so callers can clean up
  * (e.g. from a useEffect) without leaving stale handlers behind.
  *
+ * The restore only reverts the keys this call set, rather than snapshotting
+ * the whole config. With more than one registration (auth's token handler and
+ * the error reporter), a wholesale snapshot would let StrictMode's
+ * mount/cleanup/mount cycle restore a stale object and silently drop the other
+ * caller's interceptor.
+ *
  * @param {Partial<typeof DEFAULT_CONFIG>} overrides
  * @returns {() => void}
  */
 export function configureApiClient(overrides) {
-  const previous = config
+  const previousValues = {}
+  for (const key of Object.keys(overrides)) {
+    previousValues[key] = config[key]
+  }
+
   config = { ...config, ...overrides }
+
   return () => {
-    config = previous
+    config = { ...config, ...previousValues }
   }
 }
 
@@ -152,6 +169,12 @@ async function parseBody(response) {
   return text || null
 }
 
+/** Reports an error to the registered handler, then hands it back to throw. */
+function reportError(error) {
+  config.onError?.(error)
+  return error
+}
+
 function extractMessage(data, response) {
   // Laravel's convention: { message, errors? }
   if (data && typeof data === 'object' && typeof data.message === 'string') {
@@ -240,7 +263,9 @@ export async function request(path, options = {}) {
   // Already cancelled before we got here — skip the round trip entirely.
   if (controller.signal.aborted) {
     clearTimeout(timeoutId)
-    throw new ApiError('The request was cancelled.', { code: 'cancelled', url })
+    throw reportError(
+      new ApiError('The request was cancelled.', { code: 'cancelled', url }),
+    )
   }
 
   let response
@@ -248,13 +273,17 @@ export async function request(path, options = {}) {
     response = await fetch(url, init)
   } catch (error) {
     if (controller.signal.aborted) {
-      throw didTimeout
-        ? new ApiError('The request timed out.', { code: 'timeout', url })
-        : new ApiError('The request was cancelled.', { code: 'cancelled', url })
+      throw reportError(
+        didTimeout
+          ? new ApiError('The request timed out.', { code: 'timeout', url })
+          : new ApiError('The request was cancelled.', { code: 'cancelled', url }),
+      )
     }
-    throw new ApiError(
-      'Could not reach the server. Check your connection and try again.',
-      { code: 'network', url, data: error?.message },
+    throw reportError(
+      new ApiError(
+        'Could not reach the server. Check your connection and try again.',
+        { code: 'network', url, data: error?.message },
+      ),
     )
   } finally {
     clearTimeout(timeoutId)
@@ -272,13 +301,15 @@ export async function request(path, options = {}) {
       config.onUnauthorized?.()
     }
 
-    throw new ApiError(extractMessage(data, response), {
-      status: response.status,
-      data,
-      url,
-      fieldErrors:
-        data && typeof data === 'object' ? data.errors : undefined,
-    })
+    throw reportError(
+      new ApiError(extractMessage(data, response), {
+        status: response.status,
+        data,
+        url,
+        fieldErrors:
+          data && typeof data === 'object' ? data.errors : undefined,
+      }),
+    )
   }
 
   return data

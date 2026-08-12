@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { configureApiClient } from '@/lib/apiClient'
+import { toast } from '@/lib/toastStore'
 import { AuthContext } from './AuthContext'
 import {
   getCurrentUser,
@@ -69,6 +70,10 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (credentials) => {
     const session = await apiLogin(credentials)
     setState({ status: 'authenticated', user: session.user })
+
+    const firstName = session.user.name?.trim().split(/\s+/)[0]
+    toast.success(firstName ? `Welcome back, ${firstName}` : 'Signed in')
+
     return session.user
   }, [])
 
@@ -78,6 +83,7 @@ export function AuthProvider({ children }) {
     // render its <Navigate>, so the routing layer stays the single authority
     // on where a signed-out user belongs.
     setState({ status: 'unauthenticated', user: null })
+    toast.info('You have been signed out')
   }, [])
 
   const value = useMemo(

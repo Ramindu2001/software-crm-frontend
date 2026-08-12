@@ -13,9 +13,10 @@ import {
   Spinner,
 } from '@/components/ui'
 import { formatDateTime, formatRelativeTime } from '@/lib/format'
+import { toast } from '@/lib/toastStore'
 import { updateIssue } from '../api'
 import { useIssue } from '../hooks/useIssue'
-import { STATUS_OPTIONS } from '../constants'
+import { ISSUE_STATUS, STATUS_OPTIONS } from '../constants'
 import { IssuePriorityBadge } from './IssueBadge'
 
 function MetaRow({ label, children }) {
@@ -43,6 +44,9 @@ export function IssueDetailPage() {
       // Apply the returned record rather than refetching — the API already
       // gave us the authoritative version.
       applyIssue(updated)
+      toast.success('Status updated', {
+        description: `${updated.id} is now ${ISSUE_STATUS[status]?.label ?? status}.`,
+      })
     } catch (caught) {
       setUpdateError(caught.message ?? 'Could not update the status.')
     } finally {

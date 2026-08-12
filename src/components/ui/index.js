@@ -8,6 +8,8 @@ export { Select } from './Select'
 export { Textarea } from './Textarea'
 export { Modal } from './Modal'
 export { Spinner } from './Spinner'
+export { Toast } from './Toast'
+export { ToastViewport } from './ToastViewport'
 export {
   Card,
   CardHeader,

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CircleDot, SearchX, TriangleAlert } from 'lucide-react'
 import { EmptyState, PageHeader } from '@/components/common'
 import { Button } from '@/components/ui'
+import { toast } from '@/lib/toastStore'
 import { useIssues } from '../hooks/useIssues'
 import { IssueFilters } from './IssueFilters'
 import { IssuesTable } from './IssuesTable'
@@ -25,11 +26,16 @@ export function IssuesPage() {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
-  const handleCreated = () => {
+  const handleCreated = (issue) => {
     setIsCreateOpen(false)
     // Refetch so the new issue appears under the current filters and sort,
     // rather than being spliced in where it may not belong.
     refresh()
+    // Naming the issue matters: active filters may exclude it, so the toast is
+    // sometimes the only confirmation the user gets.
+    toast.success('Issue created', {
+      description: `${issue.id} · ${issue.title}`,
+    })
   }
 
   const isEmpty = !isLoading && issues.length === 0
