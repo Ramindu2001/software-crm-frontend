@@ -40,6 +40,7 @@ export function LoginPage() {
   }
 
   const fillDemoCredentials = () => {
+    if (!DEMO_CREDENTIALS) return
     setValues((current) => ({ ...current, ...DEMO_CREDENTIALS }))
     setErrors({})
     setFormError(null)
@@ -155,20 +156,23 @@ export function LoginPage() {
           </form>
         </div>
 
-        {/* Removed once the real backend is wired up. */}
-        <div className="mt-4 rounded-card bg-info-soft px-4 py-3 text-xs text-info-strong">
-          <p className="font-medium">Demo mode</p>
-          <p className="mt-1">
-            {DEMO_CREDENTIALS.email} · {DEMO_CREDENTIALS.password}
-          </p>
-          <button
-            type="button"
-            onClick={fillDemoCredentials}
-            className="mt-2 font-medium underline underline-offset-2"
-          >
-            Fill demo credentials
-          </button>
-        </div>
+        {/* null against a real backend, so this disappears on its own once
+            VITE_AUTH_API=http. */}
+        {DEMO_CREDENTIALS && (
+          <div className="mt-4 rounded-card bg-info-soft px-4 py-3 text-xs text-info-strong">
+            <p className="font-medium">Demo mode</p>
+            <p className="mt-1">
+              {DEMO_CREDENTIALS.email} · {DEMO_CREDENTIALS.password}
+            </p>
+            <button
+              type="button"
+              onClick={fillDemoCredentials}
+              className="mt-2 font-medium underline underline-offset-2"
+            >
+              Fill demo credentials
+            </button>
+          </div>
+        )}
       </div>
     </main>
   )

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { configureApiClient } from '@/lib/apiClient'
 import { AuthContext } from './AuthContext'
 import {
   getCurrentUser,
+  getSessionToken,
   login as apiLogin,
   logout as apiLogout,
+  purgeSession,
 } from './api'
 
 /**
@@ -16,6 +19,28 @@ import {
  */
 export function AuthProvider({ children }) {
   const [state, setState] = useState({ status: 'loading', user: null })
+
+  // Registered before the bootstrap effect below, so the very first request
+  // already carries a token. configureApiClient returns a restore function,
+  // which doubles as the cleanup.
+  useEffect(
+    () =>
+      configureApiClient({
+        // Request interceptor: read from storage on every call rather than
+        // capturing a token here, so a session cleared in another tab stops
+        // authorising requests immediately.
+        getToken: getSessionToken,
+
+        // Response interceptor: the server rejected our token, so the session
+        // is gone regardless of what this tab believes. Purge and flip status;
+        // RequireAuth handles the redirect.
+        onUnauthorized: () => {
+          purgeSession()
+          setState({ status: 'unauthenticated', user: null })
+        },
+      }),
+    [],
+  )
 
   useEffect(() => {
     let ignore = false

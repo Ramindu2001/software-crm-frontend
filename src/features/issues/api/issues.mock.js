@@ -7,6 +7,11 @@ import { ASSIGNEES, MOCK_ISSUES } from './mockIssues'
  * Filtering and sorting happen here rather than in the component, matching how
  * a real endpoint behaves — so replacing these functions with fetch() calls
  * should not change the hook or the UI.
+ *
+ * Note: this module deliberately runs NO function calls at import time. A
+ * bundler cannot prove a top-level call is side-effect free, so a single one
+ * pins the whole module — and its seed data — into the bundle even when
+ * VITE_ISSUES_API=http selects the other implementation.
  */
 
 const LATENCY_MS = 320
@@ -22,9 +27,15 @@ export class NotFoundError extends Error {
   }
 }
 
-// Module-level mutable store, standing in for the database. Created issues
-// persist for the session so the list reflects them after a refetch.
-let store = [...MOCK_ISSUES]
+// Mutable store standing in for the database. Created issues persist for the
+// session so the list reflects them after a refetch. Initialised lazily: the
+// spread is a function call as far as the bundler is concerned.
+let store = null
+
+function getStore() {
+  store ??= [...MOCK_ISSUES]
+  return store
+}
 
 /**
  * Sort keys map to comparable values. Status and priority sort by `rank`
@@ -40,7 +51,30 @@ const SORT_ACCESSORS = {
   updatedAt: (issue) => new Date(issue.updatedAt).getTime(),
 }
 
-export const SORTABLE_FIELDS = Object.keys(SORT_ACCESSORS)
+/**
+ * Lookup lists for the create form.
+ *
+ * Exposed as async functions rather than exported constants so the HTTP
+ * implementation can satisfy the same contract by calling real endpoints —
+ * and so no component ever imports mock data directly. Derived inside the
+ * function rather than at module scope, for the tree-shaking reason above.
+ *
+ * @returns {Promise<Array<{value: string, label: string}>>}
+ */
+export async function listAssignees() {
+  await delay(150)
+  return Object.entries(ASSIGNEES).map(([value, dev]) => ({
+    value,
+    label: dev.name,
+  }))
+}
+
+export async function listCustomers() {
+  await delay(150)
+  return [...new Set(MOCK_ISSUES.map((issue) => issue.customer))]
+    .sort()
+    .map((customer) => ({ value: customer, label: customer }))
+}
 
 function matchesQuery(issue, query) {
   if (!query) return true
@@ -72,7 +106,7 @@ export async function listIssues({
 
   const normalizedQuery = query.trim().toLowerCase()
 
-  const filtered = store.filter((issue) => {
+  const filtered = getStore().filter((issue) => {
     if (status && issue.status !== status) return false
     if (priority && issue.priority !== priority) return false
     return matchesQuery(issue, normalizedQuery)
@@ -89,7 +123,7 @@ export async function listIssues({
     return 0
   })
 
-  return { data, total: store.length, filteredTotal: data.length }
+  return { data, total: getStore().length, filteredTotal: data.length }
 }
 
 /**
@@ -100,7 +134,7 @@ export async function listIssues({
 export async function getIssue(id) {
   await delay(220)
 
-  const issue = store.find((candidate) => candidate.id === id)
+  const issue = getStore().find((candidate) => candidate.id === id)
   if (!issue) throw new NotFoundError(`Issue ${id} was not found.`)
 
   // Returned by value so callers can't mutate the store by accident.
@@ -108,7 +142,7 @@ export async function getIssue(id) {
 }
 
 function nextId() {
-  const highest = store.reduce((max, issue) => {
+  const highest = getStore().reduce((max, issue) => {
     const numeric = Number.parseInt(issue.id.replace('SYN-', ''), 10)
     return Number.isNaN(numeric) ? max : Math.max(max, numeric)
   }, 1000)
@@ -139,7 +173,7 @@ export async function createIssue(input) {
     updatedAt: now,
   }
 
-  store = [issue, ...store]
+  store = [issue, ...getStore()]
   return { ...issue }
 }
 
@@ -152,17 +186,17 @@ export async function createIssue(input) {
 export async function updateIssue(id, patch) {
   await delay(260)
 
-  const index = store.findIndex((candidate) => candidate.id === id)
+  const index = getStore().findIndex((candidate) => candidate.id === id)
   if (index === -1) throw new NotFoundError(`Issue ${id} was not found.`)
 
   const updated = {
-    ...store[index],
+    ...getStore()[index],
     ...patch,
     updatedAt: new Date().toISOString(),
   }
 
   // map rather than Array.prototype.with(), which is ES2023 and would throw
   // on older browsers — Vite transpiles syntax but does not polyfill methods.
-  store = store.map((issue, position) => (position === index ? updated : issue))
+  store = getStore().map((issue, position) => (position === index ? updated : issue))
   return { ...updated }
 }

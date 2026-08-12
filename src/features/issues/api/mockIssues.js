@@ -13,11 +13,6 @@ const DEVS = {
   ishara: { name: 'Ishara Wickrama', initials: 'IW' },
 }
 
-export const ASSIGNEE_OPTIONS = Object.entries(DEVS).map(([key, dev]) => ({
-  value: key,
-  label: dev.name,
-}))
-
 export const ASSIGNEES = DEVS
 
 export const MOCK_ISSUES = [
@@ -308,10 +303,3 @@ export const MOCK_ISSUES = [
     updatedAt: '2026-07-29T10:00:00Z',
   },
 ]
-
-/** Derived from the seed data so the create form offers known customers. */
-export const CUSTOMER_OPTIONS = [
-  ...new Set(MOCK_ISSUES.map((issue) => issue.customer)),
-]
-  .sort()
-  .map((customer) => ({ value: customer, label: customer }))

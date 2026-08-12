@@ -1,9 +1,7 @@
 import { useId, useState } from 'react'
 import { Button, Input, Modal, Select, Textarea } from '@/components/ui'
 import { createIssue } from '../api'
-// Assignees and customers come from the mock module for now; in production
-// each would be its own endpoint.
-import { ASSIGNEE_OPTIONS, CUSTOMER_OPTIONS } from '../api/mockIssues'
+import { useIssueFormOptions } from '../hooks/useIssueFormOptions'
 import { PRIORITY_OPTIONS } from '../constants'
 
 const INITIAL_VALUES = {
@@ -46,6 +44,8 @@ function validate(values) {
  */
 export function CreateIssueModal({ onClose, onCreated }) {
   const formId = useId()
+  const { assignees, customers, isLoading: isLoadingOptions } =
+    useIssueFormOptions()
   const [values, setValues] = useState(INITIAL_VALUES)
   const [errors, setErrors] = useState({})
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -146,7 +146,8 @@ export function CreateIssueModal({ onClose, onCreated }) {
             label="Assignee"
             value={values.assigneeKey}
             onChange={setValue('assigneeKey')}
-            options={ASSIGNEE_OPTIONS}
+            options={assignees}
+            disabled={isLoadingOptions}
             placeholder="Unassigned"
           />
 
@@ -154,8 +155,11 @@ export function CreateIssueModal({ onClose, onCreated }) {
             label="Customer"
             value={values.customer}
             onChange={setValue('customer')}
-            options={CUSTOMER_OPTIONS}
-            placeholder="Select a customer"
+            options={customers}
+            disabled={isLoadingOptions}
+            placeholder={
+              isLoadingOptions ? 'Loading…' : 'Select a customer'
+            }
           />
 
           <Input

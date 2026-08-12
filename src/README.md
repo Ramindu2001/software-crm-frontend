@@ -55,7 +55,37 @@ the same internal shape as we build them — don't pre-create empty features.
    domain of its own, such as a theme or query client.
 3. **`components/ui` stays dumb.** No API calls, no router, no app state.
    Presentational only, driven entirely by props.
-4. **Environment variables are read only in `config/`.**
+4. **Environment variables are read only in `config/`.** The one deliberate
+   exception is the `VITE_*_API` swap flags in each feature's `api/index.js`,
+   which must read `import.meta.env` directly — routing them through a
+   re-exported constant defeats Vite's build-time replacement and the dead-code
+   elimination that depends on it.
+
+## Talking to the backend
+
+`lib/apiClient.js` wraps `fetch`. It never imports a feature: the auth token
+and the 401 handler are registered from `AuthProvider` via
+`configureApiClient()`, which keeps `lib/` at the bottom of the dependency
+chain and makes the client testable with no React in scope.
+
+Each feature's `api/` folder holds two interchangeable implementations behind
+a selector:
+
+```
+features/issues/api/
+├── issues.mock.js   Mock data and simulated latency
+├── issues.http.js   Real endpoints via lib/apiClient
+└── index.js         Picks one from VITE_ISSUES_API
+```
+
+Both must expose the **same function signatures and return shapes**. Nothing
+above `api/` may know which is active. To migrate a feature, set its flag in
+`.env.local` (see `.env.example`) and fix `*.http.js` until it matches the
+contract — no hook or component should need to change.
+
+Requests that must not trigger the global 401 handler — login, and the session
+bootstrap — pass `handleUnauthorized: false`. A 401 there means "wrong
+password" or "stale token", not "your live session just died".
 
 ## Imports
 
