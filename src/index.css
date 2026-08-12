@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Synnex CMS — Design Tokens
+   Tailwind v4 keeps the theme in CSS. Every token below is emitted BOTH as a
+   CSS variable (var(--color-brand-600)) and as utilities (bg-brand-600,
+   text-brand-600, border-brand-600, ring-brand-600...).
+   ========================================================================== */
+@theme {
+  /* --- Brand -------------------------------------------------------------
+     Reserved for interactive intent only: primary actions, active nav,
+     focus rings. Never decorative. */
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
+
+  /* --- Surfaces ----------------------------------------------------------
+     Three elevation steps. Cards sit on canvas; sunken is for table headers,
+     wells and empty states. */
+  --color-canvas: #f8fafc;
+  --color-surface: #ffffff;
+  --color-sunken: #f1f5f9;
+
+  /* --- Lines -------------------------------------------------------------- */
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
+
+  /* --- Ink (text) ---------------------------------------------------------
+     Four steps is enough. More than that and hierarchy stops being readable. */
+  --color-ink: #0f172a;
+  --color-ink-muted: #475569;
+  --color-ink-subtle: #94a3b8;
+  --color-ink-inverse: #f8fafc;
+
+  /* --- Semantic status ----------------------------------------------------
+     A separate axis from brand. Issue priority/status must stay scannable
+     regardless of what the brand color is. Each has a soft (badge bg),
+     solid (dot/fill) and strong (text on soft) stop. */
+  --color-success-soft: #dcfce7;
+  --color-success-solid: #16a34a;
+  --color-success-strong: #15803d;
+
+  --color-warning-soft: #fef3c7;
+  --color-warning-solid: #f59e0b;
+  --color-warning-strong: #b45309;
+
+  --color-danger-soft: #fee2e2;
+  --color-danger-solid: #dc2626;
+  --color-danger-strong: #b91c1c;
+
+  --color-info-soft: #dbeafe;
+  --color-info-solid: #2563eb;
+  --color-info-strong: #1d4ed8;
+
+  --color-neutral-soft: #f1f5f9;
+  --color-neutral-solid: #64748b;
+  --color-neutral-strong: #475569;
+
+  /* --- Typography ---------------------------------------------------------- */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+
+  /* --- Radius & elevation --------------------------------------------------
+     Soft, consistent corners. Shadows stay subtle — a CRM should feel flat
+     and calm, not floaty. */
+  --radius-card: 0.75rem;
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04),
+    0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-panel: 0 4px 12px -2px rgb(15 23 42 / 0.08),
+    0 2px 6px -2px rgb(15 23 42 / 0.04);
+}
+
+/* ==========================================================================
+   Base layer
+   ========================================================================== */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+
+  /* One consistent focus ring across the whole app — accessibility is a
+     foundation decision, not a per-component afterthought. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+}
