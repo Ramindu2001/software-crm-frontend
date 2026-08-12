@@ -1,74 +1,113 @@
 import { useState } from 'react'
-import { CircleDot, Search } from 'lucide-react'
+import { CircleDot, SearchX, TriangleAlert } from 'lucide-react'
 import { EmptyState, PageHeader } from '@/components/common'
-import { Button, Input, Modal } from '@/components/ui'
+import { Button } from '@/components/ui'
+import { useIssues } from '../hooks/useIssues'
+import { IssueFilters } from './IssueFilters'
+import { IssuesTable } from './IssuesTable'
+import { CreateIssueModal } from './CreateIssueModal'
 
 export function IssuesPage() {
+  const {
+    issues,
+    isLoading,
+    error,
+    total,
+    filteredTotal,
+    filters,
+    sort,
+    hasActiveFilters,
+    setFilter,
+    resetFilters,
+    toggleSort,
+    refresh,
+  } = useIssues()
+
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const openCreate = () => setIsCreateOpen(true)
-  const closeCreate = () => setIsCreateOpen(false)
+
+  const handleCreated = () => {
+    setIsCreateOpen(false)
+    // Refetch so the new issue appears under the current filters and sort,
+    // rather than being spliced in where it may not belong.
+    refresh()
+  }
+
+  const isEmpty = !isLoading && issues.length === 0
 
   return (
     <>
       <PageHeader
         description="Track, triage and resolve reported issues."
         actions={
-          <>
-            <Input
-              placeholder="Search issues"
-              aria-label="Search issues"
-              leadingIcon={<Search className="size-4" />}
-              wrapperClassName="w-full sm:w-64"
-            />
-            <Button size="sm" onClick={openCreate}>
-              New issue
-            </Button>
-          </>
-        }
-      />
-
-      <EmptyState
-        icon={CircleDot}
-        title="No issues yet"
-        description="Once the issues data layer is wired up, reported issues will appear here."
-        action={
-          <Button size="sm" onClick={openCreate}>
-            Create the first issue
+          <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+            New issue
           </Button>
         }
       />
 
-      <Modal
-        isOpen={isCreateOpen}
-        onClose={closeCreate}
-        title="New issue"
-        description="Describe the problem so the team can triage it."
-        footer={
-          <>
-            <Button size="sm" variant="ghost" onClick={closeCreate}>
-              Cancel
-            </Button>
-            <Button size="sm" onClick={closeCreate}>
-              Create issue
-            </Button>
-          </>
+      <IssueFilters
+        filters={filters}
+        onFilterChange={setFilter}
+        onReset={resetFilters}
+        hasActiveFilters={hasActiveFilters}
+        summary={
+          error ? null : `Showing ${filteredTotal} of ${total} issues`
         }
-      >
-        <div className="grid gap-4">
-          <Input
-            label="Title"
-            placeholder="Summarise the problem"
-            required
+      />
+
+      {error ? (
+        <EmptyState
+          icon={TriangleAlert}
+          title="Couldn't load issues"
+          description={error.message ?? 'Something went wrong fetching issues.'}
+          action={
+            <Button size="sm" onClick={refresh}>
+              Try again
+            </Button>
+          }
+        />
+      ) : isEmpty ? (
+        // Distinct copy for "nothing matched" vs "nothing exists" — telling a
+        // user with active filters that there are no issues is misleading.
+        hasActiveFilters ? (
+          <EmptyState
+            icon={SearchX}
+            title="No matching issues"
+            description="No issues match the current filters. Try clearing them or broadening your search."
+            action={
+              <Button size="sm" variant="secondary" onClick={resetFilters}>
+                Clear filters
+              </Button>
+            }
           />
-          <Input
-            label="Reporter email"
-            type="email"
-            placeholder="name@synnex.com"
-            hint="We'll notify this address on status changes."
+        ) : (
+          <EmptyState
+            icon={CircleDot}
+            title="No issues yet"
+            description="Reported issues will appear here as your team logs them."
+            action={
+              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                Create the first issue
+              </Button>
+            }
           />
-          <Input label="Assignee" placeholder="Unassigned" />
-        </div>
-      </Modal>
+        )
+      ) : (
+        <IssuesTable
+          issues={issues}
+          sort={sort}
+          onToggleSort={toggleSort}
+          isLoading={isLoading}
+        />
+      )}
+
+      {/* Mounted only while open, so each open starts from a clean form. */}
+      {isCreateOpen && (
+        <CreateIssueModal
+          onClose={() => setIsCreateOpen(false)}
+          onCreated={handleCreated}
+        />
+      )}
     </>
   )
 }

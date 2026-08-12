@@ -4,6 +4,7 @@ import { NotFoundPage } from './NotFoundPage'
 import {
   CustomersPage,
   DashboardPage,
+  IssueDetailPage,
   IssuesPage,
   ReportsPage,
   SettingsPage,
@@ -40,6 +41,12 @@ export const router = createBrowserRouter([
         path: 'issues',
         element: <IssuesPage />,
         handle: { title: 'Issues' },
+      },
+      {
+        path: 'issues/:issueId',
+        element: <IssueDetailPage />,
+        // A function title lets the dynamic route show the issue reference.
+        handle: { title: (match) => match.params.issueId },
       },
       {
         path: 'customers',

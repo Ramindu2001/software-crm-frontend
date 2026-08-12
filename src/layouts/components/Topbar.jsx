@@ -10,8 +10,12 @@ import { UserMenu } from './UserMenu'
 function usePageTitle() {
   const matches = useMatches()
   // Deepest match wins, so nested routes can override their parent.
-  return [...matches].reverse().find((match) => match.handle?.title)?.handle
-    ?.title
+  const match = [...matches].reverse().find((entry) => entry.handle?.title)
+  if (!match) return undefined
+
+  const { title } = match.handle
+  // A function lets dynamic routes derive the title from their params.
+  return typeof title === 'function' ? title(match) : title
 }
 
 /**

@@ -18,6 +18,10 @@ export const IssuesPage = lazy(() =>
   import('@/features/issues').then((m) => ({ default: m.IssuesPage })),
 )
 
+export const IssueDetailPage = lazy(() =>
+  import('@/features/issues').then((m) => ({ default: m.IssueDetailPage })),
+)
+
 export const CustomersPage = lazy(() =>
   import('@/features/customers').then((m) => ({ default: m.CustomersPage })),
 )
