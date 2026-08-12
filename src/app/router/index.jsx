@@ -1,11 +1,13 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
-import { DashboardPage } from '@/features/dashboard'
-import { IssuesPage } from '@/features/issues'
-import { CustomersPage } from '@/features/customers'
-import { ReportsPage } from '@/features/reports'
-import { SettingsPage } from '@/features/settings'
 import { NotFoundPage } from './NotFoundPage'
+import {
+  CustomersPage,
+  DashboardPage,
+  IssuesPage,
+  ReportsPage,
+  SettingsPage,
+} from './lazyPages'
 
 /**
  * Application routes.
@@ -15,6 +17,13 @@ import { NotFoundPage } from './NotFoundPage'
  *
  * Uses createBrowserRouter (the data router) rather than <BrowserRouter> so
  * route loaders and actions are available when the data layer lands.
+ *
+ * Pages are lazily loaded (see ./lazyPages) so each feature ships as its own
+ * chunk. The Suspense boundary lives inside DashboardLayout, so the shell
+ * stays painted while a chunk downloads.
+ *
+ * NotFoundPage stays eager: it is tiny, shares its dependencies with the rest
+ * of the app, and a separate request to render an error is a poor trade.
  */
 export const router = createBrowserRouter([
   {

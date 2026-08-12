@@ -1,8 +1,10 @@
+import { useRef } from 'react'
 import { ChevronsLeft, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { APP_NAME } from '@/config/constants'
 import { NAV_ITEMS } from '@/config/navigation'
 import { Button } from '@/components/ui'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { SidebarNavItem } from './SidebarNavItem'
 
 /**
@@ -15,7 +17,9 @@ import { SidebarNavItem } from './SidebarNavItem'
  * @param {object} props
  * @param {boolean} props.isCollapsed Desktop rail state.
  * @param {() => void} props.onToggleCollapse
- * @param {boolean} props.isMobileOpen Drawer state.
+ * @param {boolean} props.isMobileOpen Drawer state. Must already account for
+ *   viewport size — the caller passes false on desktop so focus is never
+ *   trapped in the static rail.
  * @param {() => void} props.onCloseMobile
  */
 export function Sidebar({
@@ -24,6 +28,11 @@ export function Sidebar({
   isMobileOpen,
   onCloseMobile,
 }) {
+  const asideRef = useRef(null)
+
+  // Only traps while the drawer is genuinely open on a small viewport.
+  useFocusTrap(asideRef, isMobileOpen)
+
   return (
     <>
       {/* Mobile backdrop — desktop never needs one. */}
@@ -39,6 +48,9 @@ export function Sidebar({
       />
 
       <aside
+        ref={asideRef}
+        // Focusable so the trap can place focus on the drawer itself.
+        tabIndex={-1}
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-surface ring-1 ring-line',
           'transition-[transform,width] duration-200 ease-out',

@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, LogOut, Settings, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useClickOutside } from '@/hooks/useClickOutside'
+import { useEscapeKey } from '@/hooks/useEscapeKey'
 
 // Placeholder until the auth feature exists.
 const CURRENT_USER = {
@@ -27,15 +28,7 @@ export function UserMenu() {
   const menuId = useId()
 
   useClickOutside(containerRef, () => setIsOpen(false), isOpen)
-
-  useEffect(() => {
-    if (!isOpen) return
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setIsOpen(false)
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [isOpen])
+  useEscapeKey(() => setIsOpen(false), isOpen)
 
   return (
     <div className="relative" ref={containerRef}>
