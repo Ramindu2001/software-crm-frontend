@@ -11,7 +11,9 @@ import { Field, CONTROL_BASE, CONTROL_INVALID } from './Field'
  * @param {string} [props.label]
  * @param {string} [props.hint]
  * @param {string} [props.error]
- * @param {React.ReactNode} [props.leadingIcon]
+ * @param {React.ReactNode} [props.leadingIcon] Decorative; never interactive.
+ * @param {React.ReactNode} [props.trailing] Interactive slot on the right,
+ *   e.g. a password reveal toggle.
  * @param {string} [props.wrapperClassName] Targets the outer container.
  * @param {string} [props.className] Targets the <input> itself.
  */
@@ -20,6 +22,7 @@ export function Input({
   hint,
   error,
   leadingIcon,
+  trailing,
   required,
   id,
   wrapperClassName,
@@ -55,11 +58,20 @@ export function Input({
               CONTROL_BASE,
               'h-10 px-3',
               leadingIcon && 'pl-9',
+              trailing && 'pr-10',
               hasError && CONTROL_INVALID,
               className,
             )}
             {...props}
           />
+
+          {/* No pointer-events-none here: unlike leadingIcon, this slot is
+              meant to be clickable. */}
+          {trailing && (
+            <span className="absolute inset-y-0 right-2 flex items-center">
+              {trailing}
+            </span>
+          )}
         </div>
       )}
     </Field>

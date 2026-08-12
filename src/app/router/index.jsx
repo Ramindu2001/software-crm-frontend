@@ -1,6 +1,8 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
+import { LoginPage } from '@/features/auth'
 import { NotFoundPage } from './NotFoundPage'
+import { RequireAuth, RequireGuest } from './guards'
 import {
   CustomersPage,
   DashboardPage,
@@ -28,8 +30,22 @@ import {
  */
 export const router = createBrowserRouter([
   {
+    // Loaded eagerly rather than lazily: this is the first paint for anyone
+    // without a session, and an extra round trip there is the wrong trade.
+    path: '/login',
+    element: (
+      <RequireGuest>
+        <LoginPage />
+      </RequireGuest>
+    ),
+  },
+  {
     path: '/',
-    element: <DashboardLayout />,
+    element: (
+      <RequireAuth>
+        <DashboardLayout />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <Navigate to="/dashboard" replace /> },
       {

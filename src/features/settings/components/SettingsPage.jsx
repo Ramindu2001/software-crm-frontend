@@ -1,4 +1,5 @@
 import { PageHeader } from '@/components/common'
+import { useAuth } from '@/features/auth'
 import {
   Button,
   Card,
@@ -11,6 +12,8 @@ import {
 } from '@/components/ui'
 
 export function SettingsPage() {
+  const { user } = useAuth()
+
   return (
     <>
       <PageHeader description="Manage your profile and workspace preferences." />
@@ -23,10 +26,11 @@ export function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <Input label="Full name" defaultValue="Alex Fernando" />
-          <Input label="Email" type="email" defaultValue="alex@synnex.com" />
+          <Input label="Full name" defaultValue={user.name} />
+          <Input label="Email" type="email" defaultValue={user.email} />
           <Input
             label="Job title"
+            defaultValue={user.role}
             placeholder="Support Engineer"
             wrapperClassName="sm:col-span-2"
           />

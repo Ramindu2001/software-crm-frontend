@@ -4,13 +4,8 @@ import { ChevronDown, LogOut, Settings, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
-
-// Placeholder until the auth feature exists.
-const CURRENT_USER = {
-  name: 'Alex Fernando',
-  email: 'alex@synnex.com',
-  initials: 'AF',
-}
+import { useAuth } from '@/features/auth'
+import { Avatar, Spinner } from '@/components/ui'
 
 const ITEM_CLASS =
   'flex w-full items-center gap-2.5 px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-sunken hover:text-ink'
@@ -23,12 +18,24 @@ const ITEM_CLASS =
  * without over-promising a keyboard contract we haven't implemented.
  */
 export function UserMenu() {
+  const { user, logout } = useAuth()
   const [isOpen, setIsOpen] = useState(false)
+  const [isSigningOut, setIsSigningOut] = useState(false)
   const containerRef = useRef(null)
   const menuId = useId()
 
   useClickOutside(containerRef, () => setIsOpen(false), isOpen)
   useEscapeKey(() => setIsOpen(false), isOpen)
+
+  // RequireAuth renders the layout, so this should never be null in practice —
+  // the guard keeps the component honest if that ever changes.
+  if (!user) return null
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true)
+    // No redirect here: logout flips auth status and RequireAuth navigates.
+    await logout()
+  }
 
   return (
     <div className="relative" ref={containerRef}>
@@ -39,11 +46,9 @@ export function UserMenu() {
         aria-controls={menuId}
         className="flex items-center gap-2 rounded-lg p-1.5 transition-colors hover:bg-sunken"
       >
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
-          {CURRENT_USER.initials}
-        </span>
+        <Avatar initials={user.initials} />
         <span className="hidden text-sm font-medium text-ink sm:block">
-          {CURRENT_USER.name}
+          {user.name}
         </span>
         <ChevronDown
           className={cn(
@@ -60,12 +65,13 @@ export function UserMenu() {
           className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-card bg-surface py-1 shadow-panel ring-1 ring-line"
         >
           <div className="border-b border-line px-3 py-2.5">
-            <p className="truncate text-sm font-medium text-ink">
-              {CURRENT_USER.name}
-            </p>
-            <p className="truncate text-xs text-ink-muted">
-              {CURRENT_USER.email}
-            </p>
+            <p className="truncate text-sm font-medium text-ink">{user.name}</p>
+            <p className="truncate text-xs text-ink-muted">{user.email}</p>
+            {user.role && (
+              <p className="mt-1 text-xs font-medium text-brand-600">
+                {user.role}
+              </p>
+            )}
           </div>
 
           <div className="py-1">
@@ -90,11 +96,20 @@ export function UserMenu() {
           <div className="border-t border-line py-1">
             <button
               type="button"
-              onClick={() => setIsOpen(false)}
-              className={cn(ITEM_CLASS, 'hover:bg-danger-soft hover:text-danger-strong')}
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              className={cn(
+                ITEM_CLASS,
+                'hover:bg-danger-soft hover:text-danger-strong',
+                'disabled:pointer-events-none disabled:opacity-60',
+              )}
             >
-              <LogOut className="size-4" aria-hidden="true" />
-              Sign out
+              {isSigningOut ? (
+                <Spinner className="size-4" />
+              ) : (
+                <LogOut className="size-4" aria-hidden="true" />
+              )}
+              {isSigningOut ? 'Signing out…' : 'Sign out'}
             </button>
           </div>
         </div>

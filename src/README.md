@@ -8,7 +8,7 @@ not by what technical kind of file it is.
 ```
 src/
 ├── app/                 App composition: providers, router setup
-│   ├── providers/       Context providers (theme, auth, query client)
+│   ├── providers/       App-only context providers (theme, query client)
 │   └── router/          Route definitions and guards
 ├── assets/              Static images, icons, fonts
 ├── components/
@@ -46,6 +46,13 @@ the same internal shape as we build them — don't pre-create empty features.
 2. **Features are islands.** A feature never imports another feature's
    internals — only its `index.js` barrel. If two features need the same
    thing, it belongs in `components/common`, `hooks/` or `lib/`.
+
+   Domain-owned global state lives with its feature, not in `app/providers/`.
+   Auth is the example: `features/auth` exports `AuthProvider` and `useAuth`,
+   `app/` composes the provider, and layouts and other features read the hook
+   through the barrel. Putting it in `app/` would force `features → app`
+   imports and invert rule 1. Reserve `app/providers/` for context with no
+   domain of its own, such as a theme or query client.
 3. **`components/ui` stays dumb.** No API calls, no router, no app state.
    Presentational only, driven entirely by props.
 4. **Environment variables are read only in `config/`.**
