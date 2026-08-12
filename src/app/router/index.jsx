@@ -1,0 +1,58 @@
+import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { DashboardLayout } from '@/layouts/DashboardLayout'
+import { DashboardPage } from '@/features/dashboard'
+import { IssuesPage } from '@/features/issues'
+import { CustomersPage } from '@/features/customers'
+import { ReportsPage } from '@/features/reports'
+import { SettingsPage } from '@/features/settings'
+import { NotFoundPage } from './NotFoundPage'
+
+/**
+ * Application routes.
+ *
+ * `handle.title` is read by the Topbar via useMatches(), which keeps each
+ * page's title colocated with its route rather than pushed up from the page.
+ *
+ * Uses createBrowserRouter (the data router) rather than <BrowserRouter> so
+ * route loaders and actions are available when the data layer lands.
+ */
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <DashboardLayout />,
+    children: [
+      { index: true, element: <Navigate to="/dashboard" replace /> },
+      {
+        path: 'dashboard',
+        element: <DashboardPage />,
+        handle: { title: 'Dashboard' },
+      },
+      {
+        path: 'issues',
+        element: <IssuesPage />,
+        handle: { title: 'Issues' },
+      },
+      {
+        path: 'customers',
+        element: <CustomersPage />,
+        handle: { title: 'Customers' },
+      },
+      {
+        path: 'reports',
+        element: <ReportsPage />,
+        handle: { title: 'Reports' },
+      },
+      {
+        path: 'settings',
+        element: <SettingsPage />,
+        handle: { title: 'Settings' },
+      },
+      // Unmatched paths keep the shell so navigation stays available.
+      {
+        path: '*',
+        element: <NotFoundPage />,
+        handle: { title: 'Not found' },
+      },
+    ],
+  },
+])
