@@ -20,6 +20,7 @@ export const createIssue = impl.createIssue
 export const updateIssue = impl.updateIssue
 export const listAssignees = impl.listAssignees
 export const listCustomers = impl.listCustomers
+export const listProducts = impl.listProducts
 export const NotFoundError = impl.NotFoundError
 
 export const IS_MOCK_ISSUES = !USE_HTTP

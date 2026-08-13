@@ -23,14 +23,8 @@ const ISSUE_TONES = {
   low: 'neutral',
 }
 
-const QUOTATION_TONES = {
-  approved: 'success',
-  pending: 'warning',
-  rejected: 'danger',
-}
-
 export function DashboardPage() {
-  const { stats, recentIssues, recentQuotations, isLoading, error, refresh } = useDashboardStats()
+  const { stats, recentIssues, isLoading, error, refresh } = useDashboardStats()
 
   if (isLoading) {
     return <FullPageLoader />
@@ -55,7 +49,7 @@ export function DashboardPage() {
     { label: 'Active customers', value: stats?.activeCustomers, icon: Users },
     { label: 'Open issues', value: stats?.openIssues, icon: CircleDot },
     { label: 'Critical issues', value: stats?.criticalIssues, icon: TriangleAlert },
-    { label: 'Pending quotations', value: CURRENCY_FORMATTER.format(stats?.pendingQuotationsValue || 0), icon: FileText },
+    { label: 'Monthly revenue', value: CURRENCY_FORMATTER.format(stats?.monthlyRevenue || 0), icon: FileText },
   ]
 
   return (
@@ -79,7 +73,7 @@ export function DashboardPage() {
         ))}
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-6 grid gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Recent issues</CardTitle>
@@ -100,36 +94,6 @@ export function DashboardPage() {
                     </span>
                     <Badge tone={ISSUE_TONES[priority] || 'neutral'} size="sm" dot>
                       {status.replace('_', ' ')}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent quotations</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0 pb-2">
-            {recentQuotations?.length === 0 ? (
-              <p className="px-5 py-4 text-sm text-ink-muted">No recent quotations.</p>
-            ) : (
-              <ul className="divide-y divide-line">
-                {recentQuotations?.map(({ id, customerName, totalAmount, status }) => (
-                  <li
-                    key={id}
-                    className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-sunken"
-                  >
-                    <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                      {customerName}
-                    </span>
-                    <span className="text-sm font-medium tabular-nums text-ink">
-                      {CURRENCY_FORMATTER.format(totalAmount)}
-                    </span>
-                    <Badge tone={QUOTATION_TONES[status] || 'neutral'} size="sm">
-                      {status}
                     </Badge>
                   </li>
                 ))}

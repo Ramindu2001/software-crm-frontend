@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { listAssignees, listCustomers } from '../api'
+import { listAssignees, listCustomers, listProducts } from '../api'
 
 /**
  * Loads the assignee and customer lookups for the create form.
@@ -9,16 +9,16 @@ import { listAssignees, listCustomers } from '../api'
  * form knowing.
  */
 export function useIssueFormOptions() {
-  const [options, setOptions] = useState({ assignees: [], customers: [] })
+  const [options, setOptions] = useState({ assignees: [], customers: [], products: [] })
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     let ignore = false
 
-    Promise.all([listAssignees(), listCustomers()])
-      .then(([assignees, customers]) => {
+    Promise.all([listAssignees(), listCustomers(), listProducts()])
+      .then(([assignees, customers, products]) => {
         if (ignore) return
-        setOptions({ assignees, customers })
+        setOptions({ assignees, customers, products })
         setIsLoading(false)
       })
       .catch(() => {

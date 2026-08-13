@@ -3,13 +3,14 @@ import { Plus, Trash2 } from 'lucide-react'
 import { Button, Input, Modal, Select } from '@/components/ui'
 import { createQuotation } from '../api'
 import { listCustomers } from '@/features/customers/api'
+import { listProducts } from '@/features/issues/api'
 
 const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
 })
 
-const INITIAL_ITEM = { id: 'new-1', productName: '', quantity: 1, unitPrice: 0 }
+const INITIAL_ITEM = { id: 'new-1', productId: '', quantity: 1, unitPrice: 0 }
 
 function validate(values, items) {
   const errors = {}
@@ -20,7 +21,7 @@ function validate(values, items) {
 
   const itemErrors = items.map(item => {
     const err = {}
-    if (!item.productName.trim()) err.productName = 'Product name required'
+    if (!item.productId) err.productId = 'Product required'
     if (item.quantity <= 0) err.quantity = 'Must be > 0'
     if (item.unitPrice < 0) err.unitPrice = 'Must be >= 0'
     return err
@@ -34,7 +35,8 @@ function validate(values, items) {
 export function CreateQuotationModal({ onClose, onCreated }) {
   const formId = useId()
   const [customers, setCustomers] = useState([])
-  const [isLoadingCustomers, setIsLoadingCustomers] = useState(true)
+  const [products, setProducts] = useState([])
+  const [isLoadingOptions, setIsLoadingOptions] = useState(true)
 
   const [values, setValues] = useState({ customerId: '', date: new Date().toISOString().split('T')[0] })
   const [items, setItems] = useState([INITIAL_ITEM])
@@ -48,15 +50,16 @@ export function CreateQuotationModal({ onClose, onCreated }) {
 
   useEffect(() => {
     let ignore = false
-    listCustomers({ perPage: 100 })
-      .then((res) => {
+    Promise.all([listCustomers({ perPage: 100 }), listProducts()])
+      .then(([custRes, prodRes]) => {
         if (!ignore) {
-          setCustomers(res.data.map(c => ({ value: String(c.id), label: c.name })))
-          setIsLoadingCustomers(false)
+          setCustomers(custRes.data ? custRes.data.map(c => ({ value: String(c.id), label: c.name })) : custRes.map(c => ({ value: String(c.value), label: c.label })))
+          setProducts(prodRes)
+          setIsLoadingOptions(false)
         }
       })
       .catch(() => {
-        if (!ignore) setIsLoadingCustomers(false)
+        if (!ignore) setIsLoadingOptions(false)
       })
     return () => { ignore = true }
   }, [])
@@ -70,7 +73,7 @@ export function CreateQuotationModal({ onClose, onCreated }) {
   const handleAddItem = () => {
     setItems((current) => [
       ...current,
-      { id: `new-${nextItemId}`, productName: '', quantity: 1, unitPrice: 0 }
+      { id: `new-${nextItemId}`, productId: '', quantity: 1, unitPrice: 0 }
     ])
     setNextItemId((id) => id + 1)
   }
@@ -152,8 +155,8 @@ export function CreateQuotationModal({ onClose, onCreated }) {
             onChange={setValue('customerId')}
             options={customers}
             error={errors.customerId}
-            disabled={isLoadingCustomers}
-            placeholder={isLoadingCustomers ? 'Loading...' : 'Select a customer'}
+            disabled={isLoadingOptions}
+            placeholder={isLoadingOptions ? 'Loading...' : 'Select a customer'}
             required
           />
 
@@ -182,12 +185,14 @@ export function CreateQuotationModal({ onClose, onCreated }) {
               return (
                 <div key={item.id} className="relative grid gap-3 rounded-lg border border-line bg-surface p-3 pr-10 sm:grid-cols-12 sm:pr-12">
                   <div className="sm:col-span-5">
-                    <Input
-                      aria-label="Product name"
-                      placeholder="Product name"
-                      value={item.productName}
-                      onChange={(e) => updateItem(item.id, 'productName', e.target.value)}
-                      error={errs.productName}
+                    <Select
+                      aria-label="Product"
+                      value={item.productId}
+                      onChange={(e) => updateItem(item.id, 'productId', e.target.value)}
+                      options={products}
+                      disabled={isLoadingOptions}
+                      error={errs.productId}
+                      placeholder="Select a product"
                     />
                   </div>
                   <div className="sm:col-span-3">

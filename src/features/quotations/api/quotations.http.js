@@ -24,7 +24,7 @@ const SORT_COLUMNS = {
 
 function mapQuotation(raw) {
   return {
-    id: raw.id,
+    id: raw.quotation_id ?? raw.id,
     customerId: raw.customer_id,
     customerName: raw.customer?.name ?? raw.customer_name ?? 'Unknown Customer',
     status: raw.status ?? 'pending',
@@ -59,8 +59,7 @@ export async function listQuotations({
     params: {
       search: query,
       status,
-      sort: SORT_COLUMNS[sortBy] ?? SORT_COLUMNS.updatedAt,
-      direction: sortDir,
+      sort: `${SORT_COLUMNS[sortBy] ?? SORT_COLUMNS.updatedAt}:${sortDir}`,
       page,
       per_page: perPage,
     },
@@ -104,9 +103,9 @@ export async function createQuotation(input) {
     customer_id: input.customerId,
     date: input.date,
     items: (input.items || []).map((item) => ({
-      product_name: item.productName,
-      quantity: item.quantity,
-      unit_price: item.unitPrice,
+      product_id: item.productId,
+      quantity: Number(item.quantity),
+      unit_price: Number(item.unitPrice),
     })),
   })
 

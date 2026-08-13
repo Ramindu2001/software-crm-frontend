@@ -75,10 +75,12 @@ export async function login({ email, password, remember = false }) {
     throw error
   }
 
+  const rawData = payload.data ?? payload
+
   const session = {
-    token: payload.token ?? payload.access_token,
-    user: mapUser(payload.user ?? payload.data),
-    expiresAt: resolveExpiry(payload),
+    token: rawData.token ?? rawData.access_token,
+    user: mapUser(rawData.user ?? rawData),
+    expiresAt: resolveExpiry(rawData),
   }
 
   writeSession(session, remember)

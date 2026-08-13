@@ -7,14 +7,12 @@ import { PRIORITY_OPTIONS } from '../constants'
 const INITIAL_VALUES = {
   title: '',
   description: '',
-  priority: 'medium',
-  customer: '',
-  assigneeKey: '',
-  reporterName: '',
-  reporterEmail: '',
+  category: 'Bug',
+  priority: 'Medium',
+  customerId: '',
+  productId: '',
+  assigneeId: '',
 }
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function validate(values) {
   const errors = {}
@@ -25,9 +23,8 @@ function validate(values) {
     errors.title = 'Add a little more detail — at least 8 characters.'
   }
 
-  if (values.reporterEmail && !EMAIL_PATTERN.test(values.reporterEmail)) {
-    errors.reporterEmail = 'Enter a valid email address.'
-  }
+  if (!values.customerId) errors.customerId = 'Select a customer.'
+  if (!values.productId) errors.productId = 'Select a product.'
 
   return errors
 }
@@ -44,7 +41,7 @@ function validate(values) {
  */
 export function CreateIssueModal({ onClose, onCreated }) {
   const formId = useId()
-  const { assignees, customers, isLoading: isLoadingOptions } =
+  const { assignees, customers, products, isLoading: isLoadingOptions } =
     useIssueFormOptions()
   const [values, setValues] = useState(INITIAL_VALUES)
   const [errors, setErrors] = useState({})
@@ -143,41 +140,42 @@ export function CreateIssueModal({ onClose, onCreated }) {
           />
 
           <Select
-            label="Assignee"
-            value={values.assigneeKey}
-            onChange={setValue('assigneeKey')}
-            options={assignees}
-            disabled={isLoadingOptions}
-            placeholder="Unassigned"
+            label="Category"
+            value={values.category}
+            onChange={setValue('category')}
+            options={[
+              { value: 'Bug', label: 'Bug' },
+              { value: 'Feature', label: 'Feature' },
+            ]}
           />
 
           <Select
             label="Customer"
-            value={values.customer}
-            onChange={setValue('customer')}
+            value={values.customerId}
+            onChange={setValue('customerId')}
             options={customers}
             disabled={isLoadingOptions}
-            placeholder={
-              isLoadingOptions ? 'Loading…' : 'Select a customer'
-            }
+            error={errors.customerId}
+            placeholder={isLoadingOptions ? 'Loading…' : 'Select a customer'}
           />
 
-          <Input
-            label="Reporter name"
-            value={values.reporterName}
-            onChange={setValue('reporterName')}
-            placeholder="Who reported this?"
+          <Select
+            label="Product"
+            value={values.productId}
+            onChange={setValue('productId')}
+            options={products}
+            disabled={isLoadingOptions}
+            error={errors.productId}
+            placeholder={isLoadingOptions ? 'Loading…' : 'Select a product'}
           />
 
-          <Input
-            label="Reporter email"
-            type="email"
-            value={values.reporterEmail}
-            onChange={setValue('reporterEmail')}
-            error={errors.reporterEmail}
-            hint="Notified on status changes."
-            placeholder="name@customer.com"
-            wrapperClassName="sm:col-span-2"
+          <Select
+            label="Assignee"
+            value={values.assigneeId}
+            onChange={setValue('assigneeId')}
+            options={assignees}
+            disabled={isLoadingOptions}
+            placeholder="Unassigned"
           />
         </div>
       </form>

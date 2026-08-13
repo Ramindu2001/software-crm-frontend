@@ -83,8 +83,7 @@ export async function listIssues({
       search: query,
       status,
       priority,
-      sort: SORT_COLUMNS[sortBy] ?? SORT_COLUMNS.updatedAt,
-      direction: sortDir,
+      sort: `${SORT_COLUMNS[sortBy] ?? SORT_COLUMNS.updatedAt}:${sortDir}`,
       page,
       per_page: perPage,
     },
@@ -133,12 +132,11 @@ export async function createIssue(input) {
   const payload = await api.post('/issues', {
     title: input.title?.trim(),
     description: input.description?.trim() ?? '',
-    priority: input.priority || 'medium',
-    status: input.status || 'open',
-    assignee_id: input.assigneeKey || null,
-    customer: input.customer?.trim() || null,
-    reporter_name: input.reporterName?.trim() || null,
-    reporter_email: input.reporterEmail?.trim() || null,
+    category: input.category || 'Bug',
+    priority: input.priority || 'Medium',
+    customer_id: input.customerId,
+    product_id: input.productId,
+    assigned_developer_id: input.assigneeId || null,
   })
 
   return mapIssue(payload.data ?? payload)
@@ -149,7 +147,7 @@ export async function createIssue(input) {
  * @returns {Promise<Array<{value: string, label: string}>>}
  */
 export async function listAssignees() {
-  const payload = await api.get('/assignees')
+  const payload = await api.get('/users', { params: { role: 'Developer' } })
   const records = payload.data ?? payload ?? []
   return records.map((user) => ({ value: String(user.id), label: user.name }))
 }
@@ -160,6 +158,15 @@ export async function listCustomers() {
   return records.map((customer) => ({
     value: String(customer.id ?? customer.name),
     label: customer.name,
+  }))
+}
+
+export async function listProducts() {
+  const payload = await api.get('/products')
+  const records = payload.data ?? payload ?? []
+  return records.map((product) => ({
+    value: String(product.id),
+    label: product.name,
   }))
 }
 

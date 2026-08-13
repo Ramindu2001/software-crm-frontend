@@ -63,8 +63,7 @@ export async function listCustomers({
     params: {
       search: query,
       status,
-      sort: SORT_COLUMNS[sortBy] ?? SORT_COLUMNS.updatedAt,
-      direction: sortDir,
+      sort: `${SORT_COLUMNS[sortBy] ?? SORT_COLUMNS.updatedAt}:${sortDir}`,
       page,
       per_page: perPage,
     },
