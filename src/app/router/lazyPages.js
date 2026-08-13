@@ -33,3 +33,7 @@ export const ReportsPage = lazy(() =>
 export const SettingsPage = lazy(() =>
   import('@/features/settings').then((m) => ({ default: m.SettingsPage })),
 )
+
+export const QuotationsPage = lazy(() =>
+  import('@/features/quotations').then((m) => ({ default: m.QuotationsPage })),
+)

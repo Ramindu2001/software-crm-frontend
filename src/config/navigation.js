@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   CircleDot,
   Users,
+  FileText,
   BarChart3,
   Settings,
 } from 'lucide-react'
@@ -17,6 +18,7 @@ export const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/issues', label: 'Issues', icon: CircleDot, badge: 12 },
   { to: '/customers', label: 'Customers', icon: Users },
+  { to: '/quotations', label: 'Quotations', icon: FileText },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]

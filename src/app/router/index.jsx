@@ -10,6 +10,7 @@ import {
   IssuesPage,
   ReportsPage,
   SettingsPage,
+  QuotationsPage,
 } from './lazyPages'
 
 /**
@@ -73,6 +74,11 @@ export const router = createBrowserRouter([
         path: 'reports',
         element: <ReportsPage />,
         handle: { title: 'Reports' },
+      },
+      {
+        path: 'quotations',
+        element: <QuotationsPage />,
+        handle: { title: 'Quotations' },
       },
       {
         path: 'settings',
