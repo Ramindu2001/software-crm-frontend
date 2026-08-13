@@ -5,6 +5,7 @@ import {
   FileText,
   BarChart3,
   Settings,
+  Package,
 } from 'lucide-react'
 
 /**
@@ -19,6 +20,7 @@ export const NAV_ITEMS = [
   { to: '/issues', label: 'Issues', icon: CircleDot, badge: 12 },
   { to: '/customers', label: 'Customers', icon: Users },
   { to: '/quotations', label: 'Quotations', icon: FileText },
+  { to: '/products', label: 'Products', icon: Package },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]

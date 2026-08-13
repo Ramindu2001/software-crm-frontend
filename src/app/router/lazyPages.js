@@ -37,3 +37,7 @@ export const SettingsPage = lazy(() =>
 export const QuotationsPage = lazy(() =>
   import('@/features/quotations').then((m) => ({ default: m.QuotationsPage })),
 )
+
+export const ProductsPage = lazy(() =>
+  import('@/features/products').then((m) => ({ default: m.ProductsPage })),
+)
