@@ -10,22 +10,30 @@ export class NotFoundError extends Error {
 
 function mapProduct(raw) {
   return {
-    id: raw.id,
+    id: raw.reference ?? String(raw.id),
     name: raw.name,
     type: raw.type,
-    description: raw.description ?? '',
-    annual_fee_1st_year: raw.annual_fee_1st_year ?? 0,
-    annual_fee_2nd_year: raw.annual_fee_2nd_year ?? 0,
-    monthly_price: raw.monthly_price ?? 0,
+    is_active: Boolean(raw.is_active),
+    basic_requirements: raw.basic_requirements ?? [],
+    software_requirements: raw.software_requirements ?? [],
+    packages: (raw.packages ?? []).map(pkg => ({
+      id: String(pkg.id),
+      name: pkg.name,
+      first_year_price: Number(pkg.first_year_price),
+      second_year_price: Number(pkg.second_year_price),
+      monthly_price: Number(pkg.monthly_price),
+      features: pkg.features ?? []
+    })),
     createdAt: raw.created_at ?? raw.createdAt,
     updatedAt: raw.updated_at ?? raw.updatedAt,
   }
 }
 
-export async function listProducts({ query = '', page = 1, perPage = 10, signal } = {}) {
+export async function listProducts({ query = '', type = '', page = 1, perPage = 10, signal } = {}) {
   const payload = await api.get('/products', {
     params: {
       search: query,
+      type: type === 'All' ? '' : type,
       page,
       per_page: perPage,
     },
@@ -60,11 +68,43 @@ export async function createProduct(input) {
   const payload = await api.post('/products', {
     name: input.name?.trim(),
     type: input.type,
-    description: input.description?.trim(),
-    annual_fee_1st_year: Number(input.annual_fee_1st_year),
-    annual_fee_2nd_year: Number(input.annual_fee_2nd_year),
-    monthly_price: Number(input.monthly_price),
+    is_active: input.is_active ?? true,
+    basic_requirements: input.basic_requirements || [],
+    software_requirements: input.software_requirements || [],
+    packages: (input.packages || []).map(pkg => ({
+      name: pkg.name?.trim(),
+      first_year_price: Number(pkg.first_year_price) || 0,
+      second_year_price: Number(pkg.second_year_price) || 0,
+      monthly_price: Number(pkg.monthly_price) || 0,
+      features: pkg.features || []
+    }))
   })
 
   return mapProduct(payload.data ?? payload)
+}
+
+export async function updateProduct(id, patch) {
+  try {
+    const payload = await api.put(`/products/${encodeURIComponent(id)}`, patch)
+    return mapProduct(payload.data ?? payload)
+  } catch (error) {
+    if (error.status === 404) {
+      throw new NotFoundError(`Product ${id} was not found.`)
+    }
+    throw error
+  }
+}
+
+export async function updateProductStatus(id, isActive) {
+  try {
+    const payload = await api.patch(`/products/${encodeURIComponent(id)}/status`, {
+      is_active: isActive
+    })
+    return mapProduct(payload.data ?? payload)
+  } catch (error) {
+    if (error.status === 404) {
+      throw new NotFoundError(`Product ${id} was not found.`)
+    }
+    throw error
+  }
 }
