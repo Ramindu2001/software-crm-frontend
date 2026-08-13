@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { listProducts } from '../api'
 
-const DEFAULT_FILTERS = { query: '' }
+const DEFAULT_FILTERS = { query: '', type: 'All' }
 const PER_PAGE = 10
 
 export function useProducts() {
@@ -19,16 +19,17 @@ export function useProducts() {
       return
     }
     setPage(1)
-  }, [debouncedQuery])
+  }, [debouncedQuery, filters.type])
 
   const request = useMemo(
     () => ({
       query: debouncedQuery,
+      type: filters.type,
       page,
       perPage: PER_PAGE,
       nonce,
     }),
-    [debouncedQuery, page, nonce],
+    [debouncedQuery, filters.type, page, nonce],
   )
 
   const [result, setResult] = useState({
@@ -46,8 +47,9 @@ export function useProducts() {
 
   useEffect(() => {
     let ignore = false
+    const abortController = new AbortController()
 
-    listProducts(request)
+    listProducts({ ...request, signal: abortController.signal })
       .then((response) => {
         if (ignore) return
         setResult({
@@ -62,21 +64,17 @@ export function useProducts() {
         })
       })
       .catch((error) => {
-        if (ignore) return
-        setResult({
+        if (ignore || error.name === 'AbortError' || error.message === 'aborted') return
+        setResult((prev) => ({
+          ...prev,
           request,
-          data: [],
-          total: 0,
-          filteredTotal: 0,
-          currentPage: 1,
-          lastPage: 1,
-          perPage: PER_PAGE,
           error,
-        })
+        }))
       })
 
     return () => {
       ignore = true
+      abortController.abort()
     }
   }, [request])
 
@@ -85,10 +83,9 @@ export function useProducts() {
   }, [])
 
   const resetFilters = useCallback(() => setFilters(DEFAULT_FILTERS), [])
-
   const refresh = useCallback(() => setNonce((current) => current + 1), [])
 
-  const hasActiveFilters = filters.query !== ''
+  const hasActiveFilters = filters.query !== '' || filters.type !== 'All'
 
   return {
     products: result.data,
