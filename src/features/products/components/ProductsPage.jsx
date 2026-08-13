@@ -1,123 +1,137 @@
-import { useState } from 'react'
-import { Plus, Search, TriangleAlert } from 'lucide-react'
-import { PageHeader, EmptyState, FullPageLoader } from '@/components/common'
-import { Button, Input, Pagination } from '@/components/ui'
-import { toast } from '@/lib/toastStore'
-import { useProducts } from '../hooks/useProducts'
-import { ProductsTable } from './ProductsTable'
-import { CreateProductModal } from './CreateProductModal'
+import { Link, useNavigate } from 'react-router-dom'
+import { Plus, Search } from 'lucide-react'
+import { PageHeader } from '@/components/common/PageHeader'
+import { Button, Input, Badge, Pagination, Card, Spinner } from '@/components/ui'
+import { cn } from '@/lib/utils'
+import { useProducts } from '../hooks'
 
 export function ProductsPage() {
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const {
     products,
     isLoading,
-    error,
     filters,
     setFilter,
     page,
     lastPage,
     setPage,
-    refresh,
+    total,
+    filteredTotal,
   } = useProducts()
+  const navigate = useNavigate()
 
-  const handleCreated = () => {
-    setIsCreateModalOpen(false)
-    toast.success('Product created')
-    refresh()
-  }
-
-  if (isLoading && products.length === 0) {
-    return <FullPageLoader />
-  }
-
-  if (error && products.length === 0) {
-    return (
-      <EmptyState
-        icon={TriangleAlert}
-        title="Couldn't load products"
-        description={error.message ?? 'Something went wrong fetching the product list.'}
-        action={
-          <Button size="sm" onClick={refresh}>
-            Try again
-          </Button>
-        }
-      />
-    )
-  }
-
-  const hasNoData = products.length === 0 && filters.query === ''
-
-  if (hasNoData) {
-    return (
-      <>
-        <PageHeader description="Manage software and service offerings." />
-        <EmptyState
-          title="No products yet"
-          description="Create your first product to start building the catalog."
-          action={
-            <Button size="sm" onClick={() => setIsCreateModalOpen(true)}>
-              <Plus className="mr-1.5 size-4" />
-              New product
-            </Button>
-          }
-        />
-        {isCreateModalOpen && (
-          <CreateProductModal
-            onClose={() => setIsCreateModalOpen(false)}
-            onCreated={handleCreated}
-          />
-        )}
-      </>
-    )
-  }
+  const tabs = ['All', 'Software', 'Service']
 
   return (
-    <>
+    <div className="flex flex-col h-full">
       <PageHeader
-        description="Manage software and service offerings."
+        description="Manage your product catalog, software requirements, and pricing packages."
         actions={
-          <Button size="sm" onClick={() => setIsCreateModalOpen(true)}>
-            <Plus className="mr-1.5 size-4" />
-            New product
+          <Button onClick={() => navigate('/products/new')}>
+            <Plus className="mr-2 size-4" aria-hidden="true" />
+            Add Product
           </Button>
         }
       />
 
-      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 flex flex-wrap items-center gap-4">
         <div className="relative w-full max-w-sm">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-            <Search className="size-4 text-ink-subtle" aria-hidden="true" />
-          </div>
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-ink-muted"
+            aria-hidden="true"
+          />
           <Input
-            aria-label="Search products"
-            placeholder="Search by name…"
+            type="search"
+            placeholder="Search products..."
             value={filters.query}
             onChange={(e) => setFilter('query', e.target.value)}
             className="pl-9"
+            aria-label="Search products"
           />
+        </div>
+
+        <div className="flex bg-sunken rounded-lg p-1">
+          {tabs.map((type) => (
+            <button
+              key={type}
+              onClick={() => setFilter('type', type)}
+              className={cn(
+                'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                filters.type === type
+                  ? 'bg-surface shadow-sm text-ink'
+                  : 'text-ink-muted hover:text-ink hover:bg-surface/50'
+              )}
+              aria-pressed={filters.type === type}
+            >
+              {type}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
-        <ProductsTable products={products} />
-        {lastPage > 1 && (
-          <div className="border-t border-line px-5 py-3">
-            <Pagination
-              currentPage={page}
-              lastPage={lastPage}
-              onPageChange={setPage}
-            />
-          </div>
-        )}
-      </div>
+      <Card className="flex-1 min-h-0 overflow-hidden flex flex-col">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-sunken text-ink-muted">
+              <tr>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Type</th>
+                <th className="px-4 py-3 font-medium">Packages</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {isLoading && products.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center">
+                    <Spinner className="mx-auto size-6 text-brand-600" />
+                  </td>
+                </tr>
+              ) : products.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-ink-muted">
+                    No products found matching your filters.
+                  </td>
+                </tr>
+              ) : (
+                products.map((product) => (
+                  <tr
+                    key={product.id}
+                    onClick={() => navigate(`/products/${product.id}`)}
+                    className="hover:bg-sunken cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium text-ink">
+                      {product.name}
+                    </td>
+                    <td className="px-4 py-3 text-ink-subtle">{product.type}</td>
+                    <td className="px-4 py-3 text-ink-subtle">
+                      {product.packages?.length || 0} Package(s)
+                    </td>
+                    <td className="px-4 py-3">
+                      {product.is_active ? (
+                        <Badge tone="success">Active</Badge>
+                      ) : (
+                        <Badge tone="neutral">Inactive</Badge>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-      {isCreateModalOpen && (
-        <CreateProductModal
-          onClose={() => setIsCreateModalOpen(false)}
-          onCreated={handleCreated}
-        />
-      )}
-    </>
+        <div className="mt-auto border-t border-line px-4 py-3 flex items-center justify-between">
+          <div className="text-sm text-ink-muted">
+            Showing {products.length} of {filteredTotal} products
+            {filteredTotal !== total && ` (filtered from ${total})`}
+          </div>
+          <Pagination
+            currentPage={page}
+            lastPage={lastPage}
+            onPageChange={setPage}
+          />
+        </div>
+      </Card>
+    </div>
   )
 }

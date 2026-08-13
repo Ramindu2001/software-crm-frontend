@@ -12,6 +12,7 @@ import {
   SettingsPage,
   QuotationsPage,
   ProductsPage,
+  ProductDetailPage,
 } from './lazyPages'
 
 /**
@@ -80,6 +81,11 @@ export const router = createBrowserRouter([
         path: 'products',
         element: <ProductsPage />,
         handle: { title: 'Products' },
+      },
+      {
+        path: 'products/:productId',
+        element: <ProductDetailPage />,
+        handle: { title: (match) => `Product ${match.params.productId}` },
       },
       {
         path: 'quotations',
