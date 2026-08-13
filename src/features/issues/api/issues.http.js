@@ -65,7 +65,7 @@ function mapIssue(raw) {
 
 /**
  * @param {object} [params] Same shape the mock accepts.
- * @returns {Promise<{data: Array, total: number, filteredTotal: number}>}
+ * @returns {Promise<{data: Array, total: number, filteredTotal: number, currentPage: number, lastPage: number, perPage: number}>}
  */
 export async function listIssues({
   query = '',
@@ -73,6 +73,8 @@ export async function listIssues({
   priority = '',
   sortBy = 'updatedAt',
   sortDir = 'desc',
+  page = 1,
+  perPage = 10,
   signal,
 } = {}) {
   const payload = await api.get('/issues', {
@@ -83,6 +85,8 @@ export async function listIssues({
       priority,
       sort: SORT_COLUMNS[sortBy] ?? SORT_COLUMNS.updatedAt,
       direction: sortDir,
+      page,
+      per_page: perPage,
     },
     signal,
   })
@@ -95,8 +99,11 @@ export async function listIssues({
   // falls back to the filtered count so the "X of Y" label degrades sanely.
   const filteredTotal = payload.meta?.total ?? data.length
   const total = payload.meta?.unfiltered_total ?? filteredTotal
+  const currentPage = payload.meta?.current_page ?? page
+  const lastPage = payload.meta?.last_page ?? 1
+  const resolvedPerPage = payload.meta?.per_page ?? perPage
 
-  return { data, total, filteredTotal }
+  return { data, total, filteredTotal, currentPage, lastPage, perPage: resolvedPerPage }
 }
 
 /**

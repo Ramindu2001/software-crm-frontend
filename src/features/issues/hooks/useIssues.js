@@ -1,27 +1,41 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { listIssues } from '../api'
 import { ANY } from '../constants'
 
 const DEFAULT_FILTERS = { query: '', status: ANY, priority: ANY }
 const DEFAULT_SORT = { by: 'updatedAt', dir: 'desc' }
+const PER_PAGE = 10
 
 /**
- * Fetches and manages the issue list, including filters and sorting.
+ * Fetches and manages the issue list, including filters, sorting and pagination.
  *
- * Filtering and sorting are sent to the API rather than applied to the
- * response, matching how a paginated backend behaves — so swapping the mock
+ * Filtering, sorting and pagination are sent to the API rather than applied to
+ * the response, matching how a paginated backend behaves — so swapping the mock
  * for HTTP won't change this hook's shape.
  */
 export function useIssues() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [sort, setSort] = useState(DEFAULT_SORT)
+  const [page, setPage] = useState(1)
   // Bumped to force a refetch after a mutation.
   const [nonce, setNonce] = useState(0)
 
   // The typed value drives the input immediately; only the settled value
   // triggers a request.
   const debouncedQuery = useDebouncedValue(filters.query, 300)
+
+  // Reset to page 1 whenever any filter or sort value changes. A ref tracks
+  // whether the effect is running for the first time so we don't clobber the
+  // initial page value on mount.
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    setPage(1)
+  }, [debouncedQuery, filters.status, filters.priority, sort.by, sort.dir])
 
   const request = useMemo(
     () => ({
@@ -30,9 +44,11 @@ export function useIssues() {
       priority: filters.priority,
       sortBy: sort.by,
       sortDir: sort.dir,
+      page,
+      perPage: PER_PAGE,
       nonce,
     }),
-    [debouncedQuery, filters.status, filters.priority, sort.by, sort.dir, nonce],
+    [debouncedQuery, filters.status, filters.priority, sort.by, sort.dir, page, nonce],
   )
 
   const [result, setResult] = useState({
@@ -40,6 +56,9 @@ export function useIssues() {
     data: [],
     total: 0,
     filteredTotal: 0,
+    currentPage: 1,
+    lastPage: 1,
+    perPage: PER_PAGE,
     error: null,
   })
 
@@ -61,6 +80,9 @@ export function useIssues() {
           data: response.data,
           total: response.total,
           filteredTotal: response.filteredTotal,
+          currentPage: response.currentPage,
+          lastPage: response.lastPage,
+          perPage: response.perPage,
           error: null,
         })
       })
@@ -71,6 +93,9 @@ export function useIssues() {
           data: [],
           total: 0,
           filteredTotal: 0,
+          currentPage: 1,
+          lastPage: 1,
+          perPage: PER_PAGE,
           error,
         })
       })
@@ -115,5 +140,10 @@ export function useIssues() {
     resetFilters,
     toggleSort,
     refresh,
+    // Pagination
+    page: result.currentPage,
+    lastPage: result.lastPage,
+    perPage: result.perPage,
+    setPage,
   }
 }

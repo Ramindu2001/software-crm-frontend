@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CircleDot, SearchX, TriangleAlert } from 'lucide-react'
 import { EmptyState, PageHeader } from '@/components/common'
-import { Button } from '@/components/ui'
+import { Button, Pagination } from '@/components/ui'
 import { toast } from '@/lib/toastStore'
 import { useIssues } from '../hooks/useIssues'
 import { IssueFilters } from './IssueFilters'
@@ -22,6 +22,11 @@ export function IssuesPage() {
     resetFilters,
     toggleSort,
     refresh,
+    // Pagination
+    page,
+    lastPage,
+    perPage,
+    setPage,
   } = useIssues()
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -40,6 +45,10 @@ export function IssuesPage() {
 
   const isEmpty = !isLoading && issues.length === 0
 
+  // Compute the visible row range for the filter summary.
+  const rangeStart = filteredTotal === 0 ? 0 : (page - 1) * perPage + 1
+  const rangeEnd = Math.min(page * perPage, filteredTotal)
+
   return (
     <>
       <PageHeader
@@ -57,7 +66,11 @@ export function IssuesPage() {
         onReset={resetFilters}
         hasActiveFilters={hasActiveFilters}
         summary={
-          error ? null : `Showing ${filteredTotal} of ${total} issues`
+          error
+            ? null
+            : filteredTotal === 0
+              ? `0 of ${total} issues`
+              : `Showing ${rangeStart}–${rangeEnd} of ${filteredTotal} issues`
         }
       />
 
@@ -99,12 +112,21 @@ export function IssuesPage() {
           />
         )
       ) : (
-        <IssuesTable
-          issues={issues}
-          sort={sort}
-          onToggleSort={toggleSort}
-          isLoading={isLoading}
-        />
+        <>
+          <IssuesTable
+            issues={issues}
+            sort={sort}
+            onToggleSort={toggleSort}
+            isLoading={isLoading}
+          />
+
+          <Pagination
+            currentPage={page}
+            lastPage={lastPage}
+            onPageChange={setPage}
+            className="mt-4"
+          />
+        </>
       )}
 
       {/* Mounted only while open, so each open starts from a clean form. */}

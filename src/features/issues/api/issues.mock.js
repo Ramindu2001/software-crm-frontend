@@ -93,7 +93,9 @@ function matchesQuery(issue, query) {
  * @param {string} [params.priority]
  * @param {string} [params.sortBy]
  * @param {'asc'|'desc'} [params.sortDir]
- * @returns {Promise<{data: Array, total: number, filteredTotal: number}>}
+ * @param {number} [params.page] 1-indexed page number.
+ * @param {number} [params.perPage] Rows per page.
+ * @returns {Promise<{data: Array, total: number, filteredTotal: number, currentPage: number, lastPage: number, perPage: number}>}
  */
 export async function listIssues({
   query = '',
@@ -101,6 +103,8 @@ export async function listIssues({
   priority = '',
   sortBy = 'updatedAt',
   sortDir = 'desc',
+  page = 1,
+  perPage = 10,
 } = {}) {
   await delay()
 
@@ -115,7 +119,7 @@ export async function listIssues({
   const accessor = SORT_ACCESSORS[sortBy] ?? SORT_ACCESSORS.updatedAt
   const direction = sortDir === 'asc' ? 1 : -1
 
-  const data = [...filtered].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     const left = accessor(a)
     const right = accessor(b)
     if (left < right) return -direction
@@ -123,7 +127,21 @@ export async function listIssues({
     return 0
   })
 
-  return { data, total: getStore().length, filteredTotal: data.length }
+  // Paginate — clamp page so out-of-range values degrade gracefully.
+  const filteredTotal = sorted.length
+  const lastPage = Math.max(1, Math.ceil(filteredTotal / perPage))
+  const safePage = Math.max(1, Math.min(page, lastPage))
+  const start = (safePage - 1) * perPage
+  const data = sorted.slice(start, start + perPage)
+
+  return {
+    data,
+    total: getStore().length,
+    filteredTotal,
+    currentPage: safePage,
+    lastPage,
+    perPage,
+  }
 }
 
 /**

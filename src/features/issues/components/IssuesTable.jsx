@@ -125,8 +125,10 @@ export function IssuesTable({ issues, sort, onToggleSort, isLoading = false }) {
 
   return (
     <Card className="overflow-hidden">
-      {/* Wide tables scroll inside the card rather than the page. */}
-      <div className="overflow-x-auto">
+      {/* Wide tables scroll inside the card rather than the page.
+          max-h keeps dense lists manageable; the sticky thead ensures column
+          headers stay visible while rows scroll. */}
+      <div className="max-h-[32rem] overflow-auto">
         <table
           className="w-full min-w-3xl table-fixed border-collapse"
           aria-busy={isLoading || undefined}
@@ -135,7 +137,7 @@ export function IssuesTable({ issues, sort, onToggleSort, isLoading = false }) {
             Issues, sortable by column. Select a row to open the issue.
           </caption>
 
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="border-b border-line bg-sunken">
               {COLUMNS.map((column) => {
                 const isActive = sort.by === column.key
