@@ -13,6 +13,7 @@ import {
   QuotationsPage,
   ProductsPage,
   ProductDetailPage,
+  ProductFormPage,
 } from './lazyPages'
 
 /**
@@ -83,9 +84,19 @@ export const router = createBrowserRouter([
         handle: { title: 'Products' },
       },
       {
+        path: 'products/new',
+        element: <ProductFormPage />,
+        handle: { title: 'New Product' },
+      },
+      {
         path: 'products/:productId',
         element: <ProductDetailPage />,
         handle: { title: (match) => `Product ${match.params.productId}` },
+      },
+      {
+        path: 'products/:productId/edit',
+        element: <ProductFormPage />,
+        handle: { title: 'Edit Product' },
       },
       {
         path: 'quotations',

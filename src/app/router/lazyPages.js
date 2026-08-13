@@ -45,3 +45,7 @@ export const ProductsPage = lazy(() =>
 export const ProductDetailPage = lazy(() =>
   import('@/features/products').then((m) => ({ default: m.ProductDetailPage })),
 )
+
+export const ProductFormPage = lazy(() =>
+  import('@/features/products').then((m) => ({ default: m.ProductFormPage })),
+)
