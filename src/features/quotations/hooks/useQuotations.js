@@ -3,7 +3,9 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { listQuotations } from '../api'
 
 const DEFAULT_FILTERS = { query: '', status: '' }
-const DEFAULT_SORT = { by: 'updatedAt', dir: 'desc' }
+// Quotations have no updated timestamp; `created_at` is when one was raised,
+// and newest-first is what the API defaults to as well.
+const DEFAULT_SORT = { by: 'createdAt', dir: 'desc' }
 const PER_PAGE = 10
 
 export function useQuotations() {

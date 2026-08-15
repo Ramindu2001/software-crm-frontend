@@ -17,7 +17,11 @@ const impl = USE_HTTP ? httpImpl : mockImpl
 export const listIssues = impl.listIssues
 export const getIssue = impl.getIssue
 export const createIssue = impl.createIssue
-export const updateIssue = impl.updateIssue
+/**
+ * Status is the only mutable field: the API exposes PATCH /:id/status and no
+ * general-purpose update, so there is deliberately no `updateIssue` here.
+ */
+export const updateIssueStatus = impl.updateIssueStatus
 export const listAssignees = impl.listAssignees
 export const listCustomers = impl.listCustomers
 export const listProducts = impl.listProducts

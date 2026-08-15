@@ -14,10 +14,10 @@ import {
 } from '@/components/ui'
 import { formatDateTime, formatRelativeTime } from '@/lib/format'
 import { toast } from '@/lib/toastStore'
-import { updateIssue } from '../api'
+import { updateIssueStatus } from '../api'
 import { useIssue } from '../hooks/useIssue'
 import { ISSUE_STATUS, STATUS_OPTIONS } from '../constants'
-import { IssuePriorityBadge } from './IssueBadge'
+import { IssueCategoryBadge, IssuePriorityBadge } from './IssueBadge'
 
 function MetaRow({ label, children }) {
   return (
@@ -40,12 +40,13 @@ export function IssueDetailPage() {
     setUpdateError(null)
 
     try {
-      const updated = await updateIssue(issueId, { status })
-      // Apply the returned record rather than refetching — the API already
-      // gave us the authoritative version.
-      applyIssue(updated)
+      // The endpoint answers with the new status alone, so the change is
+      // merged into the record already on screen. Refetching the whole issue
+      // just to recover fields we never changed would be a wasted round trip.
+      const result = await updateIssueStatus(issueId, status)
+      applyIssue({ ...issue, status: result.status })
       toast.success('Status updated', {
-        description: `${updated.id} is now ${ISSUE_STATUS[status]?.label ?? status}.`,
+        description: `${issue.id} is now ${ISSUE_STATUS[result.status]?.label ?? result.status}.`,
       })
     } catch (caught) {
       setUpdateError(caught.message ?? 'Could not update the status.')
@@ -99,6 +100,7 @@ export function IssueDetailPage() {
                   {issue.id}
                 </span>
                 <IssuePriorityBadge priority={issue.priority} />
+                <IssueCategoryBadge category={issue.category} />
               </div>
               <CardTitle as="h2" className="mt-2 text-lg">
                 {issue.title}
@@ -113,6 +115,59 @@ export function IssueDetailPage() {
                 <p className="text-sm text-ink-subtle italic">
                   No description was provided.
                 </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Read-only: GET /api/issues/:id returns the thread, but there is
+              no endpoint to post one, so this renders history rather than
+              offering a composer that could not submit. */}
+          <Card className="mt-5">
+            <CardHeader>
+              <CardTitle as="h2" className="text-sm">
+                Comments
+                {issue.comments.length > 0 && (
+                  <span className="ml-1.5 text-ink-subtle">
+                    ({issue.comments.length})
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {issue.comments.length === 0 ? (
+                <p className="text-sm text-ink-subtle italic">
+                  No comments on this issue yet.
+                </p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {issue.comments.map((comment) => (
+                    <li key={comment.id} className="flex gap-3 py-3 first:pt-0 last:pb-0">
+                      <Avatar initials={comment.author.initials} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <p className="flex flex-wrap items-baseline gap-x-2">
+                          <span className="text-sm font-medium text-ink">
+                            {comment.author.name}
+                          </span>
+                          {comment.author.role && (
+                            <span className="text-xs text-ink-subtle">
+                              {comment.author.role}
+                            </span>
+                          )}
+                          <time
+                            dateTime={comment.createdAt}
+                            title={formatDateTime(comment.createdAt)}
+                            className="text-xs text-ink-subtle"
+                          >
+                            {formatRelativeTime(comment.createdAt)}
+                          </time>
+                        </p>
+                        <p className="mt-1 text-sm leading-relaxed whitespace-pre-line text-ink-muted">
+                          {comment.body}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>
@@ -147,16 +202,9 @@ export function IssueDetailPage() {
                   )}
                 </MetaRow>
 
-                <MetaRow label="Customer">{issue.customer}</MetaRow>
+                <MetaRow label="Customer">{issue.customer.name}</MetaRow>
 
-                <MetaRow label="Reporter">
-                  <span className="block truncate">{issue.reporter.name}</span>
-                  {issue.reporter.email && (
-                    <span className="block truncate text-xs text-ink-subtle">
-                      {issue.reporter.email}
-                    </span>
-                  )}
-                </MetaRow>
+                <MetaRow label="Product">{issue.product.name}</MetaRow>
 
                 <MetaRow label="Created">
                   <time dateTime={issue.createdAt} title={formatDateTime(issue.createdAt)}>
@@ -164,11 +212,19 @@ export function IssueDetailPage() {
                   </time>
                 </MetaRow>
 
-                <MetaRow label="Updated">
-                  <time dateTime={issue.updatedAt} title={formatDateTime(issue.updatedAt)}>
-                    {formatRelativeTime(issue.updatedAt)}
-                  </time>
-                </MetaRow>
+                {/* Stamped by the API the first time an issue reaches
+                    Resolved, and cleared again if it is reopened — so its
+                    presence is what "done" means here. */}
+                {issue.completedAt && (
+                  <MetaRow label="Resolved">
+                    <time
+                      dateTime={issue.completedAt}
+                      title={formatDateTime(issue.completedAt)}
+                    >
+                      {formatRelativeTime(issue.completedAt)}
+                    </time>
+                  </MetaRow>
+                )}
               </dl>
             </CardContent>
           </Card>

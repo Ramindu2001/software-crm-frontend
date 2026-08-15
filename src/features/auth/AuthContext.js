@@ -7,6 +7,8 @@ import { createContext, useContext } from 'react'
  * @property {boolean} isAuthenticated
  * @property {(credentials: object) => Promise<object>} login
  * @property {() => Promise<void>} logout
+ * @property {(permission: string) => boolean} can Mirrors the API's role
+ *   guards — see features/auth/permissions.js.
  */
 
 /** null means "no provider above" — useAuth turns that into a loud error. */

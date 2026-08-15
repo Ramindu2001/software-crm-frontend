@@ -1,12 +1,12 @@
 import { ISSUE_PRIORITY, ISSUE_STATUS } from '../constants'
-import { ASSIGNEES, MOCK_ISSUES } from './mockIssues'
+import { ASSIGNEES, CUSTOMERS, MOCK_ISSUES, PRODUCTS } from './mockIssues'
 
 /**
- * Mock issues API standing in for the Laravel backend.
+ * Mock issues API.
  *
- * Filtering and sorting happen here rather than in the component, matching how
- * a real endpoint behaves — so replacing these functions with fetch() calls
- * should not change the hook or the UI.
+ * Filtering, sorting and pagination happen here rather than in the component,
+ * matching how the real endpoint behaves — so swapping these functions for the
+ * HTTP implementation should not change the hook or the UI.
  *
  * Note: this module deliberately runs NO function calls at import time. A
  * bundler cannot prove a top-level call is side-effect free, so a single one
@@ -39,16 +39,18 @@ function getStore() {
 
 /**
  * Sort keys map to comparable values. Status and priority sort by `rank`
- * rather than label — alphabetically, "critical" would fall after "high".
+ * rather than label — alphabetically, "Resolved" would fall before "QA".
+ *
+ * The key set matches SORT_COLUMNS in issues.http.js: no `updatedAt`, because
+ * tickets carry only a created timestamp.
  */
 const SORT_ACCESSORS = {
   id: (issue) => issue.id,
   title: (issue) => issue.title.toLowerCase(),
   status: (issue) => ISSUE_STATUS[issue.status]?.rank ?? 99,
   priority: (issue) => ISSUE_PRIORITY[issue.priority]?.rank ?? 99,
-  // ￿ sorts unassigned last when ascending.
-  assignee: (issue) => issue.assignee?.name.toLowerCase() ?? '￿',
-  updatedAt: (issue) => new Date(issue.updatedAt).getTime(),
+  category: (issue) => issue.category,
+  createdAt: (issue) => new Date(issue.createdAt).getTime(),
 }
 
 /**
@@ -63,45 +65,56 @@ const SORT_ACCESSORS = {
  */
 export async function listAssignees() {
   await delay(150)
-  return Object.entries(ASSIGNEES).map(([value, dev]) => ({
-    value,
+  return Object.values(ASSIGNEES).map((dev) => ({
+    value: String(dev.id),
     label: dev.name,
   }))
 }
 
 export async function listCustomers() {
   await delay(150)
-  return [...new Set(MOCK_ISSUES.map((issue) => issue.customer))]
-    .sort()
-    .map((customer) => ({ value: customer, label: customer }))
+  return CUSTOMERS.map((entry) => ({
+    value: String(entry.id),
+    label: entry.name,
+  }))
 }
 
+export async function listProducts() {
+  await delay(150)
+  return PRODUCTS.map((entry) => ({
+    value: String(entry.id),
+    label: entry.name,
+  }))
+}
+
+/** The API searches title and description only, so this does too. */
 function matchesQuery(issue, query) {
   if (!query) return true
   return (
-    issue.id.toLowerCase().includes(query) ||
     issue.title.toLowerCase().includes(query) ||
-    issue.customer.toLowerCase().includes(query) ||
-    Boolean(issue.assignee?.name.toLowerCase().includes(query))
+    issue.description.toLowerCase().includes(query)
   )
 }
 
 /**
  * @param {object} [params]
- * @param {string} [params.query] Free-text across id, title, customer, assignee.
+ * @param {string} [params.query] Free text across title and description.
  * @param {string} [params.status] Empty string means "any".
  * @param {string} [params.priority]
+ * @param {string} [params.category]
  * @param {string} [params.sortBy]
  * @param {'asc'|'desc'} [params.sortDir]
  * @param {number} [params.page] 1-indexed page number.
  * @param {number} [params.perPage] Rows per page.
- * @returns {Promise<{data: Array, total: number, filteredTotal: number, currentPage: number, lastPage: number, perPage: number}>}
+ * @returns {Promise<{data: Array, total: number, filteredTotal: number,
+ *   currentPage: number, lastPage: number, perPage: number}>}
  */
 export async function listIssues({
   query = '',
   status = '',
   priority = '',
-  sortBy = 'updatedAt',
+  category = '',
+  sortBy = 'createdAt',
   sortDir = 'desc',
   page = 1,
   perPage = 10,
@@ -113,10 +126,11 @@ export async function listIssues({
   const filtered = getStore().filter((issue) => {
     if (status && issue.status !== status) return false
     if (priority && issue.priority !== priority) return false
+    if (category && issue.category !== category) return false
     return matchesQuery(issue, normalizedQuery)
   })
 
-  const accessor = SORT_ACCESSORS[sortBy] ?? SORT_ACCESSORS.updatedAt
+  const accessor = SORT_ACCESSORS[sortBy] ?? SORT_ACCESSORS.createdAt
   const direction = sortDir === 'asc' ? 1 : -1
 
   const sorted = [...filtered].sort((a, b) => {
@@ -136,7 +150,9 @@ export async function listIssues({
 
   return {
     data,
-    total: getStore().length,
+    // The API reports only the filtered count, so the mock does the same
+    // rather than offering a number the real implementation cannot.
+    total: filteredTotal,
     filteredTotal,
     currentPage: safePage,
     lastPage,
@@ -152,7 +168,12 @@ export async function listIssues({
 export async function getIssue(id) {
   await delay(220)
 
-  const issue = getStore().find((candidate) => candidate.id === id)
+  // The API accepts "SYN-1042" or "1042", so the mock resolves both.
+  const reference = String(id).toUpperCase().startsWith('SYN-')
+    ? String(id).toUpperCase()
+    : `SYN-${id}`
+
+  const issue = getStore().find((candidate) => candidate.id === reference)
   if (!issue) throw new NotFoundError(`Issue ${id} was not found.`)
 
   // Returned by value so callers can't mutate the store by accident.
@@ -167,6 +188,9 @@ function nextId() {
   return `SYN-${highest + 1}`
 }
 
+const findById = (list, id) =>
+  list.find((entry) => String(entry.id) === String(id)) ?? null
+
 /**
  * @param {object} input
  * @returns {Promise<object>} The created issue.
@@ -174,21 +198,25 @@ function nextId() {
 export async function createIssue(input) {
   await delay(450)
 
-  const now = new Date().toISOString()
+  const assignee = input.assigneeId ? ASSIGNEES[input.assigneeId] ?? null : null
+
   const issue = {
     id: nextId(),
     title: input.title.trim(),
     description: input.description?.trim() ?? '',
-    status: input.status || 'open',
-    priority: input.priority || 'medium',
-    assignee: input.assigneeKey ? ASSIGNEES[input.assigneeKey] : null,
-    reporter: {
-      name: input.reporterName?.trim() || 'Unknown',
-      email: input.reporterEmail?.trim() ?? '',
+    // The API always creates an issue as Open; status is not an input.
+    status: 'Open',
+    priority: input.priority || 'Medium',
+    category: input.category || 'Bug',
+    customer: findById(CUSTOMERS, input.customerId) ?? {
+      id: null,
+      name: 'Unknown',
     },
-    customer: input.customer?.trim() || 'Unassigned',
-    createdAt: now,
-    updatedAt: now,
+    product: findById(PRODUCTS, input.productId) ?? { id: null, name: 'Unknown' },
+    assignee,
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+    comments: [],
   }
 
   store = [issue, ...getStore()]
@@ -196,25 +224,45 @@ export async function createIssue(input) {
 }
 
 /**
+ * Move an issue through the workflow.
+ *
+ * Returns only `{ status }`, matching the API — its PATCH endpoint answers
+ * with the new status rather than the whole record.
+ *
+ * Also maintains completedAt the way the server does: stamped the first time
+ * an issue reaches Resolved, preserved on Resolved -> Resolved, and cleared
+ * when a resolved issue is reopened.
+ *
  * @param {string} id
- * @param {object} patch Partial issue fields.
- * @returns {Promise<object>} The updated issue.
+ * @param {string} status
+ * @returns {Promise<{status: string}>}
  * @throws {NotFoundError}
  */
-export async function updateIssue(id, patch) {
+export async function updateIssueStatus(id, status) {
   await delay(260)
 
-  const index = getStore().findIndex((candidate) => candidate.id === id)
+  const reference = String(id).toUpperCase().startsWith('SYN-')
+    ? String(id).toUpperCase()
+    : `SYN-${id}`
+
+  const index = getStore().findIndex((candidate) => candidate.id === reference)
   if (index === -1) throw new NotFoundError(`Issue ${id} was not found.`)
 
-  const updated = {
-    ...getStore()[index],
-    ...patch,
-    updatedAt: new Date().toISOString(),
-  }
+  const current = getStore()[index]
+  const isResolved = status === 'Resolved'
+  const wasResolved = current.status === 'Resolved'
+
+  let completedAt = current.completedAt
+  if (isResolved && !wasResolved) completedAt = new Date().toISOString()
+  else if (!isResolved && wasResolved) completedAt = null
+
+  const updated = { ...current, status, completedAt }
 
   // map rather than Array.prototype.with(), which is ES2023 and would throw
   // on older browsers — Vite transpiles syntax but does not polyfill methods.
-  store = getStore().map((issue, position) => (position === index ? updated : issue))
-  return { ...updated }
+  store = getStore().map((issue, position) =>
+    position === index ? updated : issue,
+  )
+
+  return { status }
 }

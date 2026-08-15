@@ -1,23 +1,25 @@
-import { useState } from 'react'
-import { CircleDot, Search, SearchX, TriangleAlert, X } from 'lucide-react'
+import { Search, SearchX, TriangleAlert, Users, X } from 'lucide-react'
 import { EmptyState, PageHeader } from '@/components/common'
-import { Button, Input, Pagination, Select } from '@/components/ui'
-import { toast } from '@/lib/toastStore'
+import { Button, Input, Pagination } from '@/components/ui'
 import { useCustomers } from '../hooks/useCustomers'
 import { CustomersTable } from './CustomersTable'
-import { CreateCustomerModal } from './CreateCustomerModal'
 
-const STATUS_OPTIONS = [
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
-]
-
+/**
+ * Customer directory.
+ *
+ * Read-only: the API exposes GET /api/customers and no write endpoint, so
+ * there is no "Add customer" action here. Offering one would be a button that
+ * could only ever fail. New records are inserted directly into the database
+ * until the backend grows a POST.
+ *
+ * There is no status filter either — `customers` has no status column, and the
+ * only notion of "active" anywhere in the schema is on subscriptions.
+ */
 export function CustomersPage() {
   const {
     customers,
     isLoading,
     error,
-    total,
     filteredTotal,
     filters,
     sort,
@@ -32,16 +34,6 @@ export function CustomersPage() {
     setPage,
   } = useCustomers()
 
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
-
-  const handleCreated = (customer) => {
-    setIsCreateOpen(false)
-    refresh()
-    toast.success('Customer created', {
-      description: customer.name,
-    })
-  }
-
   const isEmpty = !isLoading && customers.length === 0
 
   // Compute the visible row range for the filter summary.
@@ -50,14 +42,7 @@ export function CustomersPage() {
 
   return (
     <>
-      <PageHeader
-        description="Companies and contacts raising issues with your team."
-        actions={
-          <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-            Add customer
-          </Button>
-        }
-      />
+      <PageHeader description="Companies and contacts your team supports." />
 
       {/* Filter bar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
@@ -66,18 +51,9 @@ export function CustomersPage() {
           value={filters.query}
           onChange={(event) => setFilter('query', event.target.value)}
           aria-label="Search customers"
-          placeholder="Search customers"
+          placeholder="Search company, contact or email"
           leadingIcon={<Search className="size-4" />}
-          wrapperClassName="w-full sm:w-72"
-        />
-
-        <Select
-          value={filters.status}
-          onChange={(event) => setFilter('status', event.target.value)}
-          aria-label="Filter by status"
-          placeholder="All statuses"
-          options={STATUS_OPTIONS}
-          wrapperClassName="w-40"
+          wrapperClassName="w-full sm:w-80"
         />
 
         {hasActiveFilters && (
@@ -87,11 +63,9 @@ export function CustomersPage() {
           </Button>
         )}
 
-        {!error && (
+        {!error && filteredTotal > 0 && (
           <p className="ml-auto text-sm whitespace-nowrap text-ink-muted">
-            {filteredTotal === 0
-              ? `0 of ${total} customers`
-              : `Showing ${rangeStart}–${rangeEnd} of ${filteredTotal} customers`}
+            Showing {rangeStart}–{rangeEnd} of {filteredTotal} customers
           </p>
         )}
       </div>
@@ -108,27 +82,24 @@ export function CustomersPage() {
           }
         />
       ) : isEmpty ? (
+        // Distinct copy for "nothing matched" vs "nothing exists" — telling a
+        // user with an active search that there are no customers is misleading.
         hasActiveFilters ? (
           <EmptyState
             icon={SearchX}
             title="No matching customers"
-            description="No customers match the current filters. Try clearing them or broadening your search."
+            description="No customers match that search. Try a different company, contact or email."
             action={
               <Button size="sm" variant="secondary" onClick={resetFilters}>
-                Clear filters
+                Clear search
               </Button>
             }
           />
         ) : (
           <EmptyState
-            icon={CircleDot}
+            icon={Users}
             title="No customers yet"
-            description="Customer records will appear here once your team adds them."
-            action={
-              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-                Add the first customer
-              </Button>
-            }
+            description="Customer records are managed directly in the database. Once they exist, they will appear here and in the issue and quotation forms."
           />
         )
       ) : (
@@ -147,13 +118,6 @@ export function CustomersPage() {
             className="mt-4"
           />
         </>
-      )}
-
-      {isCreateOpen && (
-        <CreateCustomerModal
-          onClose={() => setIsCreateOpen(false)}
-          onCreated={handleCreated}
-        />
       )}
     </>
   )

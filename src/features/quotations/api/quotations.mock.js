@@ -1,8 +1,17 @@
+import { matchesQuery, paginate, sortRows } from '@/lib/apiEnvelope'
 import { MOCK_QUOTATIONS } from './mockQuotations'
 import { MOCK_CUSTOMERS } from '../../customers/api/mockCustomers'
 
 /**
- * Mock quotations API standing in for the Laravel backend.
+ * Mock quotations API.
+ *
+ * Matches quotations.http.js, including the two places the API returns less
+ * than you might expect: `createQuotation` answers with the reference and
+ * totals only, and there is no `getQuotation` at all, because no endpoint can
+ * read a quotation's line items back.
+ *
+ * Totals are computed here rather than taken from the input, mirroring the
+ * server — a client that could set its own total could quote any price.
  */
 
 const LATENCY_MS = 350
@@ -18,7 +27,6 @@ export class NotFoundError extends Error {
   }
 }
 
-// Mutable store
 let store = null
 
 function getStore() {
@@ -26,148 +34,136 @@ function getStore() {
   return store
 }
 
-function populateCustomer(quotation) {
-  const customer = MOCK_CUSTOMERS.find((c) => c.id === quotation.customerId)
+const customerName = (customerId) =>
+  MOCK_CUSTOMERS.find((customer) => customer.id === customerId)?.company_name ??
+  'Unknown'
+
+/**
+ * Derive the QT-YYYY-NNN reference the way the backend does: the count of
+ * quotations from the same year with an id at or below this one.
+ */
+function toReference(quotation, all) {
+  const year = new Date(quotation.createdAt).getUTCFullYear()
+  const sequence = all.filter(
+    (entry) =>
+      new Date(entry.createdAt).getUTCFullYear() === year &&
+      entry.id <= quotation.id,
+  ).length
+
+  return `QT-${year}-${String(sequence).padStart(3, '0')}`
+}
+
+function mapQuotation(quotation, all) {
   return {
-    ...quotation,
-    customerName: customer ? customer.name : 'Unknown Customer',
+    id: toReference(quotation, all),
+    quotationId: quotation.id,
+    customerId: quotation.customerId,
+    customerName: customerName(quotation.customerId),
+    totalAmount: quotation.totalAmount,
+    discount: quotation.discount,
+    finalAmount: quotation.finalAmount,
+    status: quotation.status,
+    itemsCount: quotation.itemsCount,
+    createdAt: quotation.createdAt,
   }
 }
 
 const SORT_ACCESSORS = {
-  id: (q) => q.id,
-  customerName: (q) => populateCustomer(q).customerName.toLowerCase(),
-  status: (q) => q.status,
-  totalAmount: (q) => q.totalAmount,
-  date: (q) => new Date(q.date).getTime(),
-  updatedAt: (q) => new Date(q.updatedAt).getTime(),
+  id: (quotation) => quotation.quotationId,
+  createdAt: (quotation) => new Date(quotation.createdAt).getTime(),
+  totalAmount: (quotation) => quotation.totalAmount,
+  finalAmount: (quotation) => quotation.finalAmount,
+  discount: (quotation) => quotation.discount,
+  status: (quotation) => quotation.status,
 }
 
-function matchesQuery(quotation, query) {
-  if (!query) return true
-  const q = populateCustomer(quotation)
-  return q.customerName.toLowerCase().includes(query)
-}
+/** The API searches the customer's company name and contact person. */
+const SEARCH_FIELDS = ['customerName']
 
-/**
- * @param {object} [params]
- * @returns {Promise<{data: Array, total: number, filteredTotal: number, currentPage: number, lastPage: number, perPage: number}>}
- */
 export async function listQuotations({
   query = '',
   status = '',
-  sortBy = 'updatedAt',
+  customerId = '',
+  sortBy = 'createdAt',
   sortDir = 'desc',
   page = 1,
   perPage = 10,
 } = {}) {
   await delay()
 
-  const normalizedQuery = query.trim().toLowerCase()
+  const all = getStore()
 
-  const filtered = getStore().filter((quotation) => {
-    if (status && quotation.status !== status) return false
-    return matchesQuery(quotation, normalizedQuery)
-  })
+  const rows = all
+    .map((quotation) => mapQuotation(quotation, all))
+    .filter((quotation) => {
+      if (status && quotation.status !== status) return false
+      if (customerId && String(quotation.customerId) !== String(customerId)) {
+        return false
+      }
+      return matchesQuery(quotation, query, SEARCH_FIELDS)
+    })
 
-  const accessor = SORT_ACCESSORS[sortBy] ?? SORT_ACCESSORS.updatedAt
-  const direction = sortDir === 'asc' ? 1 : -1
+  const accessor = SORT_ACCESSORS[sortBy] ?? SORT_ACCESSORS.createdAt
 
-  const sorted = [...filtered].sort((a, b) => {
-    const left = accessor(a)
-    const right = accessor(b)
-    if (left < right) return -direction
-    if (left > right) return direction
-    return 0
-  })
-
-  const filteredTotal = sorted.length
-  const lastPage = Math.max(1, Math.ceil(filteredTotal / perPage))
-  const safePage = Math.max(1, Math.min(page, lastPage))
-  const start = (safePage - 1) * perPage
-  const data = sorted.slice(start, start + perPage).map(populateCustomer)
-
-  return {
-    data,
-    total: getStore().length,
-    filteredTotal,
-    currentPage: safePage,
-    lastPage,
-    perPage,
-  }
+  return paginate(sortRows(rows, accessor, sortDir), { page, perPage })
 }
 
 /**
- * @param {number|string} id
- * @returns {Promise<object>}
- */
-export async function getQuotation(id) {
-  await delay(200)
-
-  const numericId = Number(id)
-  const quotation = getStore().find((q) => q.id === numericId)
-  if (!quotation) throw new NotFoundError(`Quotation ${id} was not found.`)
-
-  return populateCustomer({ ...quotation })
-}
-
-/**
- * @param {object} input
- * @returns {Promise<object>}
+ * Returns the reference and totals only, matching the API's 201 body.
+ *
+ * @returns {Promise<{id: string, totalAmount: number, finalAmount: number}>}
  */
 export async function createQuotation(input) {
   await delay(400)
 
-  const now = new Date().toISOString()
-  const nextId = getStore().reduce((max, q) => Math.max(max, q.id), 0) + 1
-
-  const items = (input.items || []).map((item, index) => {
-    const quantity = Number(item.quantity) || 0
-    const unitPrice = Number(item.unitPrice) || 0
-    return {
-      id: `${nextId}-${index + 1}`,
-      productName: item.productName.trim(),
-      quantity,
-      unitPrice,
-      amount: quantity * unitPrice,
-    }
-  })
-
-  const totalAmount = items.reduce((sum, item) => sum + item.amount, 0)
+  const totalAmount = (input.items ?? []).reduce(
+    (sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0),
+    0,
+  )
+  const discount = Number(input.discount) || 0
+  const finalAmount = totalAmount - discount
 
   const quotation = {
-    id: nextId,
+    id: getStore().reduce((max, entry) => Math.max(max, entry.id), 0) + 1,
     customerId: Number(input.customerId),
-    status: 'pending',
-    date: input.date || now,
-    items,
     totalAmount,
-    createdAt: now,
-    updatedAt: now,
+    discount,
+    finalAmount,
+    // The API always creates as Pending; status is not an input.
+    status: 'Pending',
+    itemsCount: (input.items ?? []).length,
+    createdAt: new Date().toISOString(),
   }
 
-  store = [quotation, ...getStore()]
-  return populateCustomer({ ...quotation })
+  store = [...getStore(), quotation]
+
+  return {
+    id: toReference(quotation, getStore()),
+    totalAmount,
+    finalAmount,
+  }
 }
 
 /**
- * @param {number|string} id
- * @param {object} patch
- * @returns {Promise<object>}
+ * @param {number|string} id Numeric key or "QT-2026-001".
+ * @returns {Promise<{id: string, status: string}>}
+ * @throws {NotFoundError}
  */
-export async function updateQuotation(id, patch) {
+export async function updateQuotationStatus(id, status) {
   await delay(250)
 
-  const numericId = Number(id)
-  const index = getStore().findIndex((q) => q.id === numericId)
+  const all = getStore()
+  const index = all.findIndex(
+    (quotation) =>
+      String(quotation.id) === String(id) ||
+      toReference(quotation, all) === String(id).toUpperCase(),
+  )
   if (index === -1) throw new NotFoundError(`Quotation ${id} was not found.`)
 
-  const updated = {
-    ...getStore()[index],
-    ...patch,
-    updatedAt: new Date().toISOString(),
-  }
+  const updated = { ...all[index], status }
+  store = all.map((quotation, position) =>
+    position === index ? updated : quotation,
+  )
 
-  store = getStore().map((q, i) => (i === index ? updated : q))
-  return populateCustomer({ ...updated })
+  return { id: toReference(updated, getStore()), status }
 }

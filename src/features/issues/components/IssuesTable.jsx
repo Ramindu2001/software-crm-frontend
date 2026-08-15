@@ -5,14 +5,31 @@ import { formatRelativeTime } from '@/lib/format'
 import { Avatar, Card } from '@/components/ui'
 import { IssuePriorityBadge, IssueStatusBadge } from './IssueBadge'
 
+/**
+ * `sortable: false` marks a column the API will not order by — assignee is
+ * a joined name with no entry in the backend's allowlist, and sending it
+ * would come back 400 rather than sorted. Those headers render as plain
+ * labels instead of buttons.
+ */
 const COLUMNS = [
   { key: 'id', label: 'ID', width: 'w-28' },
   { key: 'title', label: 'Title' },
   { key: 'status', label: 'Status', width: 'w-36' },
   { key: 'priority', label: 'Priority', width: 'w-28' },
   // Progressively dropped on narrower screens rather than squeezed.
-  { key: 'assignee', label: 'Assignee', width: 'w-48', responsive: 'hidden lg:table-cell' },
-  { key: 'updatedAt', label: 'Updated', width: 'w-36', responsive: 'hidden md:table-cell' },
+  {
+    key: 'assignee',
+    label: 'Assignee',
+    width: 'w-48',
+    responsive: 'hidden lg:table-cell',
+    sortable: false,
+  },
+  {
+    key: 'createdAt',
+    label: 'Created',
+    width: 'w-36',
+    responsive: 'hidden md:table-cell',
+  },
 ]
 
 const ARIA_SORT = { asc: 'ascending', desc: 'descending' }
@@ -74,7 +91,7 @@ function IssueRow({ issue }) {
           {issue.title}
         </Link>
         <span className="block truncate text-xs text-ink-subtle">
-          {issue.customer}
+          {issue.customer.name}
         </span>
       </td>
 
@@ -101,10 +118,10 @@ function IssueRow({ issue }) {
 
       <td className="hidden px-4 py-3 md:table-cell">
         <time
-          dateTime={issue.updatedAt}
+          dateTime={issue.createdAt}
           className="text-sm whitespace-nowrap text-ink-muted"
         >
-          {formatRelativeTime(issue.updatedAt)}
+          {formatRelativeTime(issue.createdAt)}
         </time>
       </td>
     </tr>
@@ -140,26 +157,39 @@ export function IssuesTable({ issues, sort, onToggleSort, isLoading = false }) {
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-line bg-sunken">
               {COLUMNS.map((column) => {
-                const isActive = sort.by === column.key
+                const isSortable = column.sortable !== false
+                const isActive = isSortable && sort.by === column.key
+                const label = (
+                  <span className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+                    {column.label}
+                  </span>
+                )
+
                 return (
                   <th
                     key={column.key}
                     scope="col"
-                    aria-sort={isActive ? ARIA_SORT[sort.dir] : 'none'}
+                    aria-sort={
+                      isSortable ? (isActive ? ARIA_SORT[sort.dir] : 'none') : undefined
+                    }
                     className={cn(
                       'px-4 py-2.5 text-left',
                       column.width,
                       column.responsive,
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={() => onToggleSort(column.key)}
-                      className="group inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase transition-colors hover:text-ink"
-                    >
-                      {column.label}
-                      <SortIcon isActive={isActive} direction={sort.dir} />
-                    </button>
+                    {isSortable ? (
+                      <button
+                        type="button"
+                        onClick={() => onToggleSort(column.key)}
+                        className="group inline-flex items-center gap-1.5 transition-colors hover:[&>span]:text-ink"
+                      >
+                        {label}
+                        <SortIcon isActive={isActive} direction={sort.dir} />
+                      </button>
+                    ) : (
+                      label
+                    )}
                   </th>
                 )
               })}

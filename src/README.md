@@ -27,8 +27,9 @@ src/
 └── index.css            Tailwind entry + design tokens
 ```
 
-Only `issues/` is scaffolded. Create `auth/`, `customers/`, `dashboard/` with
-the same internal shape as we build them — don't pre-create empty features.
+`auth/`, `customers/`, `dashboard/`, `issues/`, `products/` and `quotations/`
+all follow this shape. Add new features the same way — don't pre-create empty
+ones.
 
 ## Where does a component go?
 
@@ -63,10 +64,31 @@ the same internal shape as we build them — don't pre-create empty features.
 
 ## Talking to the backend
 
+The API is the Express + MySQL service in `../software-crm-backend`, on
+`http://localhost:3000/api`. Start it with `npm run dev`, then `npm run seed`
+for the three roles, one user per role, and a sample catalogue.
+
 `lib/apiClient.js` wraps `fetch`. It never imports a feature: the auth token
 and the 401 handler are registered from `AuthProvider` via
 `configureApiClient()`, which keeps `lib/` at the bottom of the dependency
 chain and makes the client testable with no React in scope.
+
+Every response is enveloped:
+
+```
+success  { "success": true,  "message": "...", "data": ..., "meta"?: {...} }
+failure  { "success": false, "message": "...", "errors"?: ["...", "..."] }
+```
+
+`apiClient` unwraps only the failure half, turning `errors` into
+`ApiError.messages` — a **flat string array**, sometimes indexed
+(`"items[1]: quantity must be at least 1"`), not per-field. Render it with
+`<ApiErrorAlert error={…} />`. `lib/apiEnvelope.js` handles the success half:
+`unwrap()`, `pageResult()` for server-paginated endpoints, and `paginate()`
+for the unpaginated master-data ones.
+
+Pagination meta is **camelCase** — `{ total, currentPage, lastPage, perPage }`
+— and the request param is `perPage`, not `per_page`.
 
 Each feature's `api/` folder holds two interchangeable implementations behind
 a selector:
@@ -78,14 +100,57 @@ features/issues/api/
 └── index.js         Picks one from VITE_ISSUES_API
 ```
 
-Both must expose the **same function signatures and return shapes**. Nothing
-above `api/` may know which is active. To migrate a feature, set its flag in
-`.env.local` (see `.env.example`) and fix `*.http.js` until it matches the
-contract — no hook or component should need to change.
+Both must expose the **same function signatures and return shapes**, including
+where the API returns *less* than you'd expect — `updateIssueStatus` resolves
+to `{ status }` alone, and `createQuotation` to a reference plus totals, so
+both mocks do the same. Nothing above `api/` may know which is active.
 
 Requests that must not trigger the global 401 handler — login, and the session
 bootstrap — pass `handleUnauthorized: false`. A 401 there means "wrong
 password" or "stale token", not "your live session just died".
+
+### Domain vocabulary comes from the API
+
+`features/*/constants.js` use the server's enum values verbatim as keys —
+`'Open'`, `'In Progress'`, `'QA'`, `'Resolved'`; `'High' | 'Medium' | 'Low'`;
+`'Pending' | 'Approved' | 'Rejected'`; `'Software' | 'Service'`. A filter value
+goes straight onto the query string and a response value looks itself up with
+no translation table in between. Anything outside the enum is a 422.
+
+There is no `Critical` priority and no `Closed` status. Adding either needs an
+`ALTER TABLE` on the enum first.
+
+### What the API does not do
+
+Worth knowing before building against it:
+
+- **No customer writes.** `GET /api/customers` is the entire surface — no POST,
+  no PATCH, no `GET /:id`. Records go in through the database directly.
+- **No quotation detail.** There is no `GET /api/quotations/:id`, so line items
+  cannot be read back; the list carries `items_count` and the totals.
+- **No `updated_at` on tickets.** Only `created_at`, so "recently updated"
+  ordering does not exist.
+- **No product DELETE.** Products are referenced with `ON DELETE RESTRICT`;
+  `PATCH /:id/status` is the soft delete.
+- **Unpaginated master data.** `/customers`, `/products` and `/users` return
+  everything — they exist to fill pickers. Their `api/` modules page the result
+  client-side so the hooks cannot tell the difference.
+
+### Role guards
+
+Writes are role-gated server-side and mirrored in
+`features/auth/permissions.js`. Read `can()` off `useAuth()` and hide actions
+the caller cannot perform, rather than letting them 403:
+
+| Permission | Roles |
+| --- | --- |
+| `issues:create` | Admin, Support |
+| `quotations:create`, `quotations:setStatus` | Admin, Support |
+| `products:write` | Admin |
+
+Reads are open to any authenticated user, so they have no entry. The server
+re-checks every one of these — the table exists to avoid dead ends, not to
+enforce anything.
 
 ## Imports
 

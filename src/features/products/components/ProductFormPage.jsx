@@ -1,11 +1,14 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Trash2, Plus, ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { FullPageLoader } from '@/components/common/FullPageLoader'
 import { RouteFallback } from '@/components/common/RouteFallback'
+import { ApiErrorAlert } from '@/components/common'
 import { Button, Input, Select, Textarea, Card, CardHeader, CardTitle, CardContent } from '@/components/ui'
+import { useAuth } from '@/features/auth'
 import { useProduct, useCreateProduct, useUpdateProduct } from '../hooks'
+import { PRODUCT_TYPE_OPTIONS } from '../constants'
 import { toast } from '@/lib/toastStore'
 
 // Helper to wrap strings in stable objects for form arrays to prevent focus loss
@@ -21,7 +24,13 @@ export function ProductFormPage() {
   const { mutate: createProduct, isMutating: isCreating } = useCreateProduct()
   const { mutate: updateProduct, isMutating: isUpdating } = useUpdateProduct()
 
+  // POST and PUT are Admin-only. The page is reachable by URL, so the check
+  // lives here as well as on the buttons that link to it.
+  const { can } = useAuth()
+  const canWrite = can('products:write')
+
   const isMutating = isCreating || isUpdating
+  const [submitError, setSubmitError] = useState(null)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -48,6 +57,15 @@ export function ProductFormPage() {
       })
     }
   }, [isEditMode, product])
+
+  if (!canWrite) {
+    return (
+      <RouteFallback
+        title="Not permitted"
+        description="Only an Admin can add or edit products in the catalogue."
+      />
+    )
+  }
 
   if (isEditMode && isFetching) return <FullPageLoader />
   if (isEditMode && fetchError) {
@@ -163,6 +181,9 @@ export function ProductFormPage() {
       return toast.warning('Name is required', { description: 'Please enter a product name.' })
     }
 
+    // Package ids are deliberately not sent. PUT replaces the child rows
+    // wholesale — deleting them and reinserting — so an id from the previous
+    // read would be meaningless to the server.
     const payload = {
       name: formData.name,
       type: formData.type,
@@ -170,7 +191,6 @@ export function ProductFormPage() {
       basic_requirements: unwrapStringArray(formData.basic_requirements),
       software_requirements: unwrapStringArray(formData.software_requirements),
       packages: formData.packages.map(pkg => ({
-        id: pkg.id, // Will be undefined for new packages, handled by API/mock
         name: pkg.name,
         first_year_price: pkg.first_year_price,
         second_year_price: pkg.second_year_price,
@@ -178,6 +198,8 @@ export function ProductFormPage() {
         features: unwrapStringArray(pkg.features)
       }))
     }
+
+    setSubmitError(null)
 
     try {
       if (isEditMode) {
@@ -190,7 +212,11 @@ export function ProductFormPage() {
         navigate(`/products/${newProd.id}`)
       }
     } catch (err) {
-      toast.error('Save failed', { description: err.message || 'An error occurred while saving.' })
+      // Rendered inline rather than as a toast: a 422 here lists every problem
+      // it found, indexed by package and feature
+      // ("packages[1]: annual_fee_1st_year must be at least 0"), and that is
+      // too much detail to fit in a toast the user cannot scroll back to.
+      setSubmitError(err)
     }
   }
 
@@ -221,6 +247,8 @@ export function ProductFormPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 max-w-4xl mx-auto w-full">
+        <ApiErrorAlert error={submitError} fallback="Could not save the product." />
+
         <Card>
           <CardHeader>
             <CardTitle>Basic Information</CardTitle>
@@ -237,13 +265,14 @@ export function ProductFormPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-ink mb-1">Type</label>
+              {/* Select renders its `options` prop, not children — passing
+                  <option> elements here produced an empty dropdown, which made
+                  Service products unreachable even though the API accepts them. */}
               <Select
                 value={formData.type}
                 onChange={(e) => handleChange('type', e.target.value)}
-              >
-                <option value="Software">Software</option>
-                <option value="Service">Service</option>
-              </Select>
+                options={PRODUCT_TYPE_OPTIONS}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-ink mb-1">Description</label>

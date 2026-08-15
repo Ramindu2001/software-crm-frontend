@@ -1,6 +1,6 @@
 import { Search, X } from 'lucide-react'
 import { Button, Input, Select } from '@/components/ui'
-import { PRIORITY_OPTIONS, STATUS_OPTIONS } from '../constants'
+import { CATEGORY_OPTIONS, PRIORITY_OPTIONS, STATUS_OPTIONS } from '../constants'
 
 /**
  * Filter bar for the issue list.
@@ -10,7 +10,7 @@ import { PRIORITY_OPTIONS, STATUS_OPTIONS } from '../constants'
  * the control does.
  *
  * @param {object} props
- * @param {{query: string, status: string, priority: string}} props.filters
+ * @param {{query: string, status: string, priority: string, category: string}} props.filters
  * @param {(key: string, value: string) => void} props.onFilterChange
  * @param {() => void} props.onReset
  * @param {boolean} props.hasActiveFilters
@@ -50,6 +50,15 @@ export function IssueFilters({
         aria-label="Filter by priority"
         placeholder="All priorities"
         options={PRIORITY_OPTIONS}
+        wrapperClassName="w-40"
+      />
+
+      <Select
+        value={filters.category}
+        onChange={(event) => onFilterChange('category', event.target.value)}
+        aria-label="Filter by category"
+        placeholder="All categories"
+        options={CATEGORY_OPTIONS}
         wrapperClassName="w-40"
       />
 

@@ -16,8 +16,14 @@ const impl = USE_HTTP ? httpImpl : mockImpl
 
 export const listCustomers = impl.listCustomers
 export const getCustomer = impl.getCustomer
-export const createCustomer = impl.createCustomer
-export const updateCustomer = impl.updateCustomer
+/** Every customer as {value, label}, for the issue and quotation pickers. */
+export const listCustomerOptions = impl.listCustomerOptions
 export const NotFoundError = impl.NotFoundError
+
+/**
+ * There is deliberately no createCustomer / updateCustomer: the API exposes
+ * GET /api/customers and nothing else. Records are inserted directly into the
+ * database until a write endpoint exists.
+ */
 
 export const IS_MOCK_CUSTOMERS = !USE_HTTP

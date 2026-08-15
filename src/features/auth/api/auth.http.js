@@ -1,4 +1,5 @@
 import { api } from '@/lib/apiClient'
+import { deriveInitials, unwrap } from '@/lib/apiEnvelope'
 import {
   clearSession,
   DEFAULT_SESSION_TTL_MS,
@@ -10,9 +11,13 @@ import {
 /**
  * Real auth endpoints.
  *
- * Endpoint paths and payload shapes are a best guess at the Laravel API and
- * are the first thing to adjust once it exists — the surrounding contract
- * (what these functions accept and return) is what must stay fixed.
+ *   POST /api/auth/login   public   -> { token, user: { id, name, email, role } }
+ *   GET  /api/auth/me      bearer   -> { id, name, email, role }
+ *   POST /api/auth/logout  bearer   -> null
+ *
+ * The server re-reads the user from the database on every authenticated
+ * request, so a role change or a deleted account takes effect immediately
+ * rather than when the token expires.
  */
 
 export class AuthError extends Error {
@@ -26,13 +31,6 @@ export class AuthError extends Error {
 /** No demo account against a real backend. */
 export const DEMO_CREDENTIALS = null
 
-function deriveInitials(name = '') {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts.at(-1)[0]).toUpperCase()
-}
-
 /** Normalises the server payload into the shape the UI expects. */
 function mapUser(raw) {
   if (!raw) return null
@@ -40,15 +38,50 @@ function mapUser(raw) {
     id: raw.id,
     name: raw.name,
     email: raw.email,
+    // 'Admin' | 'Support' | 'Developer'. Drives the permission checks in
+    // ../permissions.js, so it must survive verbatim.
     role: raw.role ?? null,
     initials: raw.initials ?? deriveInitials(raw.name),
+  }
+}
+
+/**
+ * Read the `exp` claim out of a JWT, in milliseconds.
+ *
+ * The login response carries no expiry field of its own, but the token itself
+ * states when it dies (JWT_EXPIRES_IN, 1d by default). Without this the client
+ * would fall back to its own 8-hour guess and sign the user out three times a
+ * day while the token was still perfectly valid.
+ *
+ * Decode only — this is a display/expiry hint, never a trust decision. The
+ * signature is the server's business, and a token we misread simply produces
+ * a 401 that the interceptor already handles.
+ *
+ * @returns {number|null} Epoch ms, or null if the token is unreadable.
+ */
+function readTokenExpiry(token) {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return null
+
+    // base64url -> base64, then pad to a multiple of 4.
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
+    const { exp } = JSON.parse(atob(padded))
+
+    return typeof exp === 'number' ? exp * 1000 : null
+  } catch {
+    // Malformed or unusually encoded token — fall back to the default TTL.
+    return null
   }
 }
 
 function resolveExpiry(payload) {
   if (payload.expires_at) return new Date(payload.expires_at).getTime()
   if (payload.expires_in) return Date.now() + payload.expires_in * 1000
-  return Date.now() + DEFAULT_SESSION_TTL_MS
+
+  const fromToken = payload.token ? readTokenExpiry(payload.token) : null
+  return fromToken ?? Date.now() + DEFAULT_SESSION_TTL_MS
 }
 
 /**
@@ -69,13 +102,17 @@ export async function login({ email, password, remember = false }) {
       },
     )
   } catch (error) {
+    // 401 is "Invalid email or password" — deliberately the same message for
+    // an unknown email as for a wrong password, so this endpoint cannot be
+    // used to discover which addresses are registered. 422 means a malformed
+    // or missing field; `detail` carries the server's own wording.
     if (error.status === 401 || error.status === 422) {
-      throw new AuthError(error.message || 'The email or password is incorrect.')
+      throw new AuthError(error.detail || 'The email or password is incorrect.')
     }
     throw error
   }
 
-  const rawData = payload.data ?? payload
+  const rawData = unwrap(payload)
 
   const session = {
     token: rawData.token ?? rawData.access_token,
@@ -104,7 +141,7 @@ export async function getCurrentUser() {
       // the app signed out, and firing the global handler would double up.
       handleUnauthorized: false,
     })
-    return mapUser(payload.data ?? payload)
+    return mapUser(unwrap(payload))
   } catch (error) {
     if (error.status === 401) {
       clearSession()

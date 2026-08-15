@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { configureApiClient } from '@/lib/apiClient'
 import { toast } from '@/lib/toastStore'
 import { AuthContext } from './AuthContext'
+import { can as checkPermission } from './permissions'
 import {
   getCurrentUser,
   getSessionToken,
@@ -93,6 +94,12 @@ export function AuthProvider({ children }) {
       isAuthenticated: state.status === 'authenticated',
       login,
       logout,
+      /**
+       * Whether the signed-in user may perform an action the API role-guards.
+       * Bound to the current user here so call sites read as
+       * `can('products:write')` rather than threading the user through.
+       */
+      can: (permission) => checkPermission(state.user, permission),
     }),
     [state, login, logout],
   )

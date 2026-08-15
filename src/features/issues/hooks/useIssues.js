@@ -3,8 +3,10 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { listIssues } from '../api'
 import { ANY } from '../constants'
 
-const DEFAULT_FILTERS = { query: '', status: ANY, priority: ANY }
-const DEFAULT_SORT = { by: 'updatedAt', dir: 'desc' }
+const DEFAULT_FILTERS = { query: '', status: ANY, priority: ANY, category: ANY }
+// Tickets have no `updated_at` column, so newest-first is the only sensible
+// default and `createdAt` is what the API will sort by.
+const DEFAULT_SORT = { by: 'createdAt', dir: 'desc' }
 const PER_PAGE = 10
 
 /**
@@ -35,20 +37,37 @@ export function useIssues() {
       return
     }
     setPage(1)
-  }, [debouncedQuery, filters.status, filters.priority, sort.by, sort.dir])
+  }, [
+    debouncedQuery,
+    filters.status,
+    filters.priority,
+    filters.category,
+    sort.by,
+    sort.dir,
+  ])
 
   const request = useMemo(
     () => ({
       query: debouncedQuery,
       status: filters.status,
       priority: filters.priority,
+      category: filters.category,
       sortBy: sort.by,
       sortDir: sort.dir,
       page,
       perPage: PER_PAGE,
       nonce,
     }),
-    [debouncedQuery, filters.status, filters.priority, sort.by, sort.dir, page, nonce],
+    [
+      debouncedQuery,
+      filters.status,
+      filters.priority,
+      filters.category,
+      sort.by,
+      sort.dir,
+      page,
+      nonce,
+    ],
   )
 
   const [result, setResult] = useState({
@@ -125,7 +144,8 @@ export function useIssues() {
   const hasActiveFilters =
     filters.query !== '' ||
     filters.status !== ANY ||
-    filters.priority !== ANY
+    filters.priority !== ANY ||
+    filters.category !== ANY
 
   return {
     issues: result.data,

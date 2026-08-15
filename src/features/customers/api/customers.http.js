@@ -1,12 +1,26 @@
 import { api } from '@/lib/apiClient'
+import { paginate, unwrap } from '@/lib/apiEnvelope'
 
 /**
- * Real customers endpoints.
+ * Real customers endpoint.
  *
- * Paths and payload shapes are a best guess at the Laravel API and will be
- * adjusted once the backend is ready. The contract these functions expose —
- * same arguments and returned shape as customers.mock.js — must stay stable
- * so nothing above api/ has to branch on which implementation is active.
+ *   GET /api/customers   any logged-in   the whole list
+ *
+ * That is the entire surface. There is no POST, no PATCH and no
+ * GET /:id — customers are master data the API exposes for pickers, and the
+ * backend has no write path for them at all. New records go in through the
+ * database directly.
+ *
+ * Two consequences shape this module:
+ *
+ *   1. It is unpaginated by design: a dropdown needs every option, not page 1.
+ *      The customers table still wants pages, so the slicing happens here
+ *      rather than in the hook — which therefore cannot tell this feature from
+ *      a server-paginated one.
+ *   2. The payload is deliberately lean: id, company_name, contact_person,
+ *      email, phone. `address` and `created_at` exist in the table but are not
+ *      returned, and there is no status, industry or issue count anywhere in
+ *      the schema. The UI reflects exactly these five fields.
  */
 
 export class NotFoundError extends Error {
@@ -17,123 +31,97 @@ export class NotFoundError extends Error {
   }
 }
 
+/** UI sort keys mapped to the columns the API will order by. */
 const SORT_COLUMNS = {
   id: 'id',
-  name: 'name',
-  company: 'company',
-  industry: 'industry',
-  status: 'status',
-  issueCount: 'issue_count',
-  updatedAt: 'updated_at',
+  name: 'company_name',
+  contactPerson: 'contact_person',
+  email: 'email',
   createdAt: 'created_at',
 }
 
-/** Normalises a server record into the shape the UI already expects. */
+const DEFAULT_SORT_KEY = 'name'
+
+/**
+ * `company_name` becomes `name` because that is what every screen calls it.
+ * The raw column name is an implementation detail of the join it comes from.
+ */
 function mapCustomer(raw) {
   return {
     id: raw.id,
-    name: raw.name,
+    name: raw.company_name,
+    contactPerson: raw.contact_person ?? '',
     email: raw.email ?? '',
     phone: raw.phone ?? '',
-    company: raw.company ?? raw.name,
-    industry: raw.industry ?? 'Other',
-    status: raw.status ?? 'active',
-    issueCount: raw.issue_count ?? raw.issueCount ?? 0,
-    contactName: raw.contact_name ?? raw.contactName ?? '',
-    notes: raw.notes ?? '',
-    createdAt: raw.created_at ?? raw.createdAt,
-    updatedAt: raw.updated_at ?? raw.updatedAt,
   }
 }
 
 /**
+ * Fetch the list, filtered and sorted by the server.
+ *
+ * Search runs server-side (it matches company_name, contact_person and email,
+ * which is more than a client-side pass over the mapped fields would cover),
+ * and paging is applied to the result here.
+ *
  * @param {object} [params]
- * @returns {Promise<{data: Array, total: number, filteredTotal: number, currentPage: number, lastPage: number, perPage: number}>}
+ * @returns {Promise<{data: Array, total: number, filteredTotal: number,
+ *   currentPage: number, lastPage: number, perPage: number}>}
  */
 export async function listCustomers({
   query = '',
-  status = '',
-  sortBy = 'updatedAt',
-  sortDir = 'desc',
+  sortBy = DEFAULT_SORT_KEY,
+  sortDir = 'asc',
   page = 1,
   perPage = 10,
   signal,
 } = {}) {
+  const column = SORT_COLUMNS[sortBy] ?? SORT_COLUMNS[DEFAULT_SORT_KEY]
+
   const payload = await api.get('/customers', {
     params: {
       search: query,
-      status,
-      sort: `${SORT_COLUMNS[sortBy] ?? SORT_COLUMNS.updatedAt}:${sortDir}`,
-      page,
-      per_page: perPage,
+      sort: `${column}:${sortDir}`,
     },
     signal,
   })
 
-  const records = payload.data ?? []
-  const data = records.map(mapCustomer)
+  const rows = (unwrap(payload) ?? []).map(mapCustomer)
 
-  const filteredTotal = payload.meta?.total ?? data.length
-  const total = payload.meta?.unfiltered_total ?? filteredTotal
-  const currentPage = payload.meta?.current_page ?? page
-  const lastPage = payload.meta?.last_page ?? 1
-  const resolvedPerPage = payload.meta?.per_page ?? perPage
-
-  return { data, total, filteredTotal, currentPage, lastPage, perPage: resolvedPerPage }
+  return paginate(rows, { page, perPage })
 }
 
 /**
+ * Read a single customer.
+ *
+ * There is no GET /api/customers/:id, so this narrows the list instead. The
+ * list carries every field the API exposes, which makes the round trip
+ * complete rather than partial — but it does transfer the whole table to find
+ * one row, so prefer the record already in hand where there is one.
+ *
  * @param {number|string} id
  * @returns {Promise<object>}
  * @throws {NotFoundError}
  */
 export async function getCustomer(id) {
-  try {
-    const payload = await api.get(`/customers/${encodeURIComponent(id)}`)
-    return mapCustomer(payload.data ?? payload)
-  } catch (error) {
-    if (error.status === 404) {
-      throw new NotFoundError(`Customer ${id} was not found.`)
-    }
-    throw error
-  }
+  const payload = await api.get('/customers')
+  const rows = unwrap(payload) ?? []
+
+  const match = rows.find((row) => String(row.id) === String(id))
+  if (!match) throw new NotFoundError(`Customer ${id} was not found.`)
+
+  return mapCustomer(match)
 }
 
 /**
- * @param {object} input
- * @returns {Promise<object>}
+ * Options for a customer picker: every customer, no paging.
+ * Shared by the issue and quotation forms.
+ *
+ * @returns {Promise<Array<{value: string, label: string}>>}
  */
-export async function createCustomer(input) {
-  const payload = await api.post('/customers', {
-    name: input.name?.trim(),
-    email: input.email?.trim() ?? '',
-    phone: input.phone?.trim() ?? '',
-    company: input.company?.trim() || null,
-    industry: input.industry?.trim() || null,
-    contact_name: input.contactName?.trim() || null,
-    notes: input.notes?.trim() ?? '',
-  })
-
-  return mapCustomer(payload.data ?? payload)
-}
-
-/**
- * @param {number|string} id
- * @param {object} patch
- * @returns {Promise<object>}
- * @throws {NotFoundError}
- */
-export async function updateCustomer(id, patch) {
-  try {
-    const payload = await api.patch(
-      `/customers/${encodeURIComponent(id)}`,
-      patch,
-    )
-    return mapCustomer(payload.data ?? payload)
-  } catch (error) {
-    if (error.status === 404) {
-      throw new NotFoundError(`Customer ${id} was not found.`)
-    }
-    throw error
-  }
+export async function listCustomerOptions() {
+  const payload = await api.get('/customers')
+  return (unwrap(payload) ?? []).map((row) => ({
+    value: String(row.id),
+    label: row.company_name,
+  }))
 }

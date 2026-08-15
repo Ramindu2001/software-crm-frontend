@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui'
-import { ISSUE_PRIORITY, ISSUE_STATUS } from '../constants'
+import { ISSUE_CATEGORY, ISSUE_PRIORITY, ISSUE_STATUS } from '../constants'
 
 /**
  * Status carries a dot; priority does not.
@@ -25,6 +25,18 @@ export function IssuePriorityBadge({ priority, size = 'sm' }) {
 
   return (
     <Badge tone={meta.tone} size={size}>
+      {meta.label}
+    </Badge>
+  )
+}
+
+/** Bug vs Feature. Neutral-toned so it reads as a label, not a severity. */
+export function IssueCategoryBadge({ category, size = 'sm' }) {
+  const meta = ISSUE_CATEGORY[category]
+  if (!meta) return null
+
+  return (
+    <Badge tone="neutral" size={size}>
       {meta.label}
     </Badge>
   )

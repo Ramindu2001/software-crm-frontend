@@ -1,8 +1,9 @@
 import { useId, useState } from 'react'
+import { ApiErrorAlert } from '@/components/common'
 import { Button, Input, Modal, Select, Textarea } from '@/components/ui'
 import { createIssue } from '../api'
 import { useIssueFormOptions } from '../hooks/useIssueFormOptions'
-import { PRIORITY_OPTIONS } from '../constants'
+import { CATEGORY_OPTIONS, PRIORITY_OPTIONS } from '../constants'
 
 const INITIAL_VALUES = {
   title: '',
@@ -19,8 +20,12 @@ function validate(values) {
 
   if (!values.title.trim()) {
     errors.title = 'Title is required.'
+    // The API's own floor is 3 characters; 8 is a stricter client-side nudge
+    // toward a title someone can triage from.
   } else if (values.title.trim().length < 8) {
     errors.title = 'Add a little more detail — at least 8 characters.'
+  } else if (values.title.trim().length > 255) {
+    errors.title = 'Keep the title under 255 characters.'
   }
 
   if (!values.customerId) errors.customerId = 'Select a customer.'
@@ -72,7 +77,10 @@ export function CreateIssueModal({ onClose, onCreated }) {
       const issue = await createIssue(values)
       onCreated(issue)
     } catch (error) {
-      setSubmitError(error.message ?? 'Something went wrong. Please try again.')
+      // Kept as the error object, not a string: a 400 names every bad
+      // reference at once ("customer_id 999 does not exist") and a 422 lists
+      // each field problem, both in `messages`.
+      setSubmitError(error)
       setIsSubmitting(false)
     }
   }
@@ -104,14 +112,7 @@ export function CreateIssueModal({ onClose, onCreated }) {
       }
     >
       <form id={formId} onSubmit={handleSubmit} noValidate className="grid gap-4">
-        {submitError && (
-          <p
-            role="alert"
-            className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-strong"
-          >
-            {submitError}
-          </p>
-        )}
+        <ApiErrorAlert error={submitError} />
 
         <Input
           label="Title"
@@ -143,10 +144,7 @@ export function CreateIssueModal({ onClose, onCreated }) {
             label="Category"
             value={values.category}
             onChange={setValue('category')}
-            options={[
-              { value: 'Bug', label: 'Bug' },
-              { value: 'Feature', label: 'Feature' },
-            ]}
+            options={CATEGORY_OPTIONS}
           />
 
           <Select

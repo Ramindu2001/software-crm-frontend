@@ -10,3 +10,7 @@
 export { AuthProvider } from './AuthProvider'
 export { useAuth } from './AuthContext'
 export { LoginPage } from './components/LoginPage'
+
+// The role vocabulary and the permission table, for anything that needs to
+// reason about roles beyond `can()` — e.g. rendering the current user's role.
+export { ROLES, ROLE_VALUES, can } from './permissions'

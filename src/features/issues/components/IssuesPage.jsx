@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CircleDot, SearchX, TriangleAlert } from 'lucide-react'
 import { EmptyState, PageHeader } from '@/components/common'
 import { Button, Pagination } from '@/components/ui'
+import { useAuth } from '@/features/auth'
 import { toast } from '@/lib/toastStore'
 import { useIssues } from '../hooks/useIssues'
 import { IssueFilters } from './IssueFilters'
@@ -29,6 +30,11 @@ export function IssuesPage() {
     setPage,
   } = useIssues()
 
+  // POST /api/issues is Admin/Support only — a Developer sees the queue but
+  // is not offered a button that would come back 403.
+  const { can } = useAuth()
+  const canCreate = can('issues:create')
+
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const handleCreated = (issue) => {
@@ -54,9 +60,11 @@ export function IssuesPage() {
       <PageHeader
         description="Track, triage and resolve reported issues."
         actions={
-          <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-            New issue
-          </Button>
+          canCreate && (
+            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+              New issue
+            </Button>
+          )
         }
       />
 
@@ -105,9 +113,11 @@ export function IssuesPage() {
             title="No issues yet"
             description="Reported issues will appear here as your team logs them."
             action={
-              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-                Create the first issue
-              </Button>
+              canCreate && (
+                <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                  Create the first issue
+                </Button>
+              )
             }
           />
         )

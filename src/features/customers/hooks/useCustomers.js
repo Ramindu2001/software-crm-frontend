@@ -2,8 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { listCustomers } from '../api'
 
-const DEFAULT_FILTERS = { query: '', status: '' }
-const DEFAULT_SORT = { by: 'updatedAt', dir: 'desc' }
+// No status filter: `customers` has no status column, and the endpoint
+// supports only a free-text search.
+const DEFAULT_FILTERS = { query: '' }
+// Alphabetical by company, because that is how a directory is read — and the
+// API has no updated timestamp to sort by.
+const DEFAULT_SORT = { by: 'name', dir: 'asc' }
 const PER_PAGE = 10
 
 /**
@@ -30,19 +34,18 @@ export function useCustomers() {
       return
     }
     setPage(1)
-  }, [debouncedQuery, filters.status, sort.by, sort.dir])
+  }, [debouncedQuery, sort.by, sort.dir])
 
   const request = useMemo(
     () => ({
       query: debouncedQuery,
-      status: filters.status,
       sortBy: sort.by,
       sortDir: sort.dir,
       page,
       perPage: PER_PAGE,
       nonce,
     }),
-    [debouncedQuery, filters.status, sort.by, sort.dir, page, nonce],
+    [debouncedQuery, sort.by, sort.dir, page, nonce],
   )
 
   const [result, setResult] = useState({
@@ -110,9 +113,7 @@ export function useCustomers() {
 
   const refresh = useCallback(() => setNonce((current) => current + 1), [])
 
-  const hasActiveFilters =
-    filters.query !== '' ||
-    filters.status !== ''
+  const hasActiveFilters = filters.query !== ''
 
   return {
     customers: result.data,

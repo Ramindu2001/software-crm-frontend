@@ -2,23 +2,19 @@ import { useState } from 'react'
 import { FileText, Search, SearchX, TriangleAlert, X } from 'lucide-react'
 import { EmptyState, PageHeader } from '@/components/common'
 import { Button, Input, Pagination, Select } from '@/components/ui'
+import { useAuth } from '@/features/auth'
 import { toast } from '@/lib/toastStore'
 import { useQuotations } from '../hooks/useQuotations'
+import { updateQuotationStatus } from '../api'
+import { QUOTATION_STATUS_OPTIONS } from '../constants'
 import { QuotationsTable } from './QuotationsTable'
 import { CreateQuotationModal } from './CreateQuotationModal'
-
-const STATUS_OPTIONS = [
-  { value: 'approved', label: 'Approved' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'rejected', label: 'Rejected' },
-]
 
 export function QuotationsPage() {
   const {
     quotations,
     isLoading,
     error,
-    total,
     filteredTotal,
     filters,
     sort,
@@ -33,14 +29,40 @@ export function QuotationsPage() {
     setPage,
   } = useQuotations()
 
+  // POST /api/quotations and PATCH /:id/status are both Admin/Support —
+  // quotations are a commercial document, so Developers read but do not price.
+  const { can } = useAuth()
+  const canCreate = can('quotations:create')
+  const canSetStatus = can('quotations:setStatus')
+
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [pendingId, setPendingId] = useState(null)
 
   const handleCreated = (quotation) => {
     setIsCreateOpen(false)
+    // Refetch rather than splice: the 201 carries only the reference and
+    // totals, not a full row, and active filters may exclude it anyway.
     refresh()
     toast.success('Quotation created', {
-      description: `Quotation for ${quotation.customerName} saved successfully.`,
+      description: `${quotation.id} · ${CURRENCY.format(quotation.finalAmount)}`,
     })
+  }
+
+  const handleStatusChange = async (quotationId, status) => {
+    setPendingId(quotationId)
+    try {
+      const result = await updateQuotationStatus(quotationId, status)
+      refresh()
+      toast.success('Status updated', {
+        description: `${result.id} is now ${result.status.toLowerCase()}.`,
+      })
+    } catch (caught) {
+      toast.error('Could not update the status', {
+        description: caught.detail ?? caught.message,
+      })
+    } finally {
+      setPendingId(null)
+    }
   }
 
   const isEmpty = !isLoading && quotations.length === 0
@@ -51,11 +73,13 @@ export function QuotationsPage() {
   return (
     <>
       <PageHeader
-        description="Manage and track quotations sent to customers."
+        description="Quotations raised for customers, priced from the catalogue."
         actions={
-          <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-            Create quotation
-          </Button>
+          canCreate && (
+            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+              Create quotation
+            </Button>
+          )
         }
       />
 
@@ -65,7 +89,7 @@ export function QuotationsPage() {
           value={filters.query}
           onChange={(event) => setFilter('query', event.target.value)}
           aria-label="Search quotations"
-          placeholder="Search by customer..."
+          placeholder="Search by customer"
           leadingIcon={<Search className="size-4" />}
           wrapperClassName="w-full sm:w-72"
         />
@@ -75,7 +99,7 @@ export function QuotationsPage() {
           onChange={(event) => setFilter('status', event.target.value)}
           aria-label="Filter by status"
           placeholder="All statuses"
-          options={STATUS_OPTIONS}
+          options={QUOTATION_STATUS_OPTIONS}
           wrapperClassName="w-40"
         />
 
@@ -86,11 +110,9 @@ export function QuotationsPage() {
           </Button>
         )}
 
-        {!error && (
+        {!error && filteredTotal > 0 && (
           <p className="ml-auto text-sm whitespace-nowrap text-ink-muted">
-            {filteredTotal === 0
-              ? `0 of ${total} quotations`
-              : `Showing ${rangeStart}–${rangeEnd} of ${filteredTotal} quotations`}
+            Showing {rangeStart}–{rangeEnd} of {filteredTotal} quotations
           </p>
         )}
       </div>
@@ -124,9 +146,11 @@ export function QuotationsPage() {
             title="No quotations yet"
             description="Quotations will appear here once your team creates them."
             action={
-              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-                Create the first quotation
-              </Button>
+              canCreate && (
+                <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                  Create the first quotation
+                </Button>
+              )
             }
           />
         )
@@ -137,6 +161,9 @@ export function QuotationsPage() {
             sort={sort}
             onToggleSort={toggleSort}
             isLoading={isLoading}
+            canSetStatus={canSetStatus}
+            pendingId={pendingId}
+            onStatusChange={handleStatusChange}
           />
 
           <Pagination
@@ -157,3 +184,9 @@ export function QuotationsPage() {
     </>
   )
 }
+
+const CURRENCY = new Intl.NumberFormat('en-LK', {
+  style: 'currency',
+  currency: 'LKR',
+  maximumFractionDigits: 2,
+})

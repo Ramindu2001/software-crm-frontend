@@ -7,10 +7,12 @@ import {
 } from './session'
 
 /**
- * Mock auth implementation, standing in for the Laravel backend.
+ * Mock auth implementation.
  *
  * The session shape it produces is identical to auth.http.js, so swapping
- * between them changes nothing above the api/ module.
+ * between them changes nothing above the api/ module. The accounts below
+ * mirror `npm run seed` on the backend — same emails, same password, same
+ * three roles — so a permission check behaves the same either way.
  */
 
 const LATENCY_MS = 600
@@ -30,27 +32,38 @@ export class AuthError extends Error {
 // backend never sends them to the client.
 const USERS = [
   {
-    id: 'usr_01',
-    name: 'Alex Fernando',
-    email: 'alex@synnex.com',
-    password: 'synnex123',
+    id: 1,
+    name: 'Admin User',
+    email: 'admin@synnexit.com',
+    password: 'password123',
     role: 'Admin',
-    initials: 'AF',
+    initials: 'AU',
   },
   {
-    id: 'usr_02',
-    name: 'Nadia Perera',
-    email: 'nadia@synnex.com',
-    password: 'synnex123',
-    role: 'Engineer',
-    initials: 'NP',
+    id: 2,
+    name: 'Support User',
+    email: 'support@synnexit.com',
+    password: 'password123',
+    role: 'Support',
+    initials: 'SU',
+  },
+  {
+    id: 3,
+    name: 'Developer User',
+    email: 'dev@synnexit.com',
+    password: 'password123',
+    role: 'Developer',
+    initials: 'DU',
   },
 ]
 
-/** Demo credentials surfaced on the login screen while the backend is mocked. */
+/**
+ * Demo credentials surfaced on the login screen while the backend is mocked.
+ * Admin, so every role-gated action is reachable in mock mode.
+ */
 export const DEMO_CREDENTIALS = {
-  email: 'alex@synnex.com',
-  password: 'synnex123',
+  email: 'admin@synnexit.com',
+  password: 'password123',
 }
 
 /**

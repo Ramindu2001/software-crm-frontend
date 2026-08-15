@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { FullPageLoader } from '@/components/common/FullPageLoader'
 import { RouteFallback } from '@/components/common/RouteFallback'
 import { Button, Badge, Card, CardHeader, CardTitle, CardContent } from '@/components/ui'
+import { useAuth } from '@/features/auth'
 import { useProduct, useProductStatus } from '../hooks'
 import { toast } from '@/lib/toastStore'
 
@@ -12,6 +13,10 @@ export function ProductDetailPage() {
   const navigate = useNavigate()
   const { product, isLoading, error, refresh, isNotFound } = useProduct(productId)
   const { mutate: updateStatus, isMutating: isUpdatingStatus } = useProductStatus()
+
+  // PATCH /:id/status and PUT /:id are both Admin-only.
+  const { can } = useAuth()
+  const canWrite = can('products:write')
 
   if (isLoading) return <FullPageLoader />
   
@@ -62,29 +67,31 @@ export function ProductDetailPage() {
       <PageHeader
         description={`ID: ${product.id} • ${product.type}`}
         actions={
-          <>
-            <Button
-              variant={product.is_active ? 'danger' : 'secondary'}
-              onClick={handleToggleStatus}
-              disabled={isUpdatingStatus}
-            >
-              {product.is_active ? (
-                <>
-                  <PowerOff className="mr-2 size-4" aria-hidden="true" />
-                  Deactivate
-                </>
-              ) : (
-                <>
-                  <Power className="mr-2 size-4 text-success-solid" aria-hidden="true" />
-                  Activate
-                </>
-              )}
-            </Button>
-            <Button onClick={() => navigate(`/products/${product.id}/edit`)}>
-              <Pencil className="mr-2 size-4" aria-hidden="true" />
-              Edit Product
-            </Button>
-          </>
+          canWrite && (
+            <>
+              <Button
+                variant={product.is_active ? 'danger' : 'secondary'}
+                onClick={handleToggleStatus}
+                disabled={isUpdatingStatus}
+              >
+                {product.is_active ? (
+                  <>
+                    <PowerOff className="mr-2 size-4" aria-hidden="true" />
+                    Deactivate
+                  </>
+                ) : (
+                  <>
+                    <Power className="mr-2 size-4 text-success-solid" aria-hidden="true" />
+                    Activate
+                  </>
+                )}
+              </Button>
+              <Button onClick={() => navigate(`/products/${product.id}/edit`)}>
+                <Pencil className="mr-2 size-4" aria-hidden="true" />
+                Edit Product
+              </Button>
+            </>
+          )
         }
       />
 

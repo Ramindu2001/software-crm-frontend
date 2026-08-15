@@ -1,7 +1,13 @@
 import { API_BASE_URL } from '@/config/constants'
 
 /**
- * HTTP client for the Laravel backend.
+ * HTTP client for the Synnex CRM backend (Express + MySQL).
+ *
+ * Every response is enveloped — `{ success, message, data, meta? }` on the way
+ * out, `{ success, message, errors? }` on failure. This module only unwraps the
+ * failure half, because that is what has to become an Error. Peeling `data`
+ * and `meta` off a success is the job of lib/apiEnvelope.js, so a caller that
+ * wants the raw payload can still have it.
  *
  * Built on fetch rather than Axios: our wrapper already *is* the interceptor
  * layer, so a dependency whose main draw is its interceptor API earns little
@@ -72,17 +78,37 @@ export class ApiError extends Error {
   /**
    * @param {string} message
    * @param {{status?: number, code?: string, data?: *, url?: string,
-   *   fieldErrors?: Record<string, string[]>}} details
+   *   messages?: string[], fieldErrors?: Record<string, string[]>}} details
    */
-  constructor(message, { status = 0, code, data, url, fieldErrors } = {}) {
+  constructor(
+    message,
+    { status = 0, code, data, url, messages = [], fieldErrors } = {},
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.data = data
     this.url = url
-    /** Laravel 422 payloads expose per-field messages; forms consume these. */
+    /**
+     * Flat list of human-readable problems, in the order the server reported
+     * them. This API returns `errors` as a plain string array — including the
+     * indexed forms it uses for nested payloads ("items[1]: quantity must be
+     * at least 1") — so a form renders these as a list rather than trying to
+     * bind them to inputs.
+     */
+    this.messages = messages
+    /**
+     * Per-field messages, only when the server actually sent an object. This
+     * backend does not, so it is left undefined; kept so a call site can
+     * prefer field-level errors when a future endpoint provides them.
+     */
     this.fieldErrors = fieldErrors
+  }
+
+  /** The server's own wording, joined for display in a single alert. */
+  get detail() {
+    return this.messages.length ? this.messages.join(' ') : this.message
   }
 
   get isNetworkError() {
@@ -126,7 +152,8 @@ function toQueryString(params) {
     if (value === undefined || value === null || value === '') continue
 
     if (Array.isArray(value)) {
-      // Laravel reads repeated `key[]` params as an array.
+      // Repeated `key[]` params, which Express's default query parser reads
+      // back as an array.
       for (const item of value) {
         if (item !== undefined && item !== null && item !== '') {
           search.append(`${key}[]`, String(item))
@@ -176,13 +203,37 @@ function reportError(error) {
 }
 
 function extractMessage(data, response) {
-  // Laravel's convention: { message, errors? }
+  // The API's failure envelope: { success: false, message, errors? }
   if (data && typeof data === 'object' && typeof data.message === 'string') {
     return data.message
   }
   if (typeof data === 'string' && data.trim()) return data
 
   return `Request failed with status ${response.status}.`
+}
+
+/**
+ * Normalise the `errors` half of a failure envelope.
+ *
+ * This API sends a flat string array. An object of per-field arrays is
+ * accepted too and flattened alongside, so one shape reaches call sites
+ * regardless of which the server used.
+ */
+function extractErrors(data) {
+  if (!data || typeof data !== 'object') return {}
+
+  const { errors } = data
+  if (Array.isArray(errors)) {
+    return { messages: errors.filter((entry) => typeof entry === 'string') }
+  }
+  if (errors && typeof errors === 'object') {
+    return {
+      fieldErrors: errors,
+      messages: Object.values(errors).flat().filter(Boolean),
+    }
+  }
+
+  return {}
 }
 
 /**
@@ -306,8 +357,7 @@ export async function request(path, options = {}) {
         status: response.status,
         data,
         url,
-        fieldErrors:
-          data && typeof data === 'object' ? data.errors : undefined,
+        ...extractErrors(data),
       }),
     )
   }

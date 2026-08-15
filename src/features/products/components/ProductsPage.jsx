@@ -1,9 +1,11 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Plus, Search } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { Button, Input, Badge, Pagination, Card, Spinner } from '@/components/ui'
+import { useAuth } from '@/features/auth'
 import { cn } from '@/lib/utils'
 import { useProducts } from '../hooks'
+import { PRODUCT_TYPE_TABS } from '../constants'
 
 export function ProductsPage() {
   const {
@@ -19,17 +21,26 @@ export function ProductsPage() {
   } = useProducts()
   const navigate = useNavigate()
 
-  const tabs = ['All', 'Software', 'Service']
+  // The catalogue defines what the company sells and what every quotation is
+  // priced against, so the API treats it as configuration: writes are Admin
+  // only. Support and Developers get a read-only view.
+  const { can } = useAuth()
+  const canWrite = can('products:write')
+
+  // "All" sends no type param; the other two are the enum values verbatim.
+  const tabs = PRODUCT_TYPE_TABS
 
   return (
     <div className="flex flex-col h-full">
       <PageHeader
         description="Manage your product catalog, software requirements, and pricing packages."
         actions={
-          <Button onClick={() => navigate('/products/new')}>
-            <Plus className="mr-2 size-4" aria-hidden="true" />
-            Add Product
-          </Button>
+          canWrite && (
+            <Button onClick={() => navigate('/products/new')}>
+              <Plus className="mr-2 size-4" aria-hidden="true" />
+              Add Product
+            </Button>
+          )
         }
       />
 
@@ -104,7 +115,10 @@ export function ProductsPage() {
                     </td>
                     <td className="px-4 py-3 text-ink-subtle">{product.type}</td>
                     <td className="px-4 py-3 text-ink-subtle">
-                      {product.packages?.length || 0} Package(s)
+                      {/* The list endpoint returns a count, not the packages —
+                          those come only from GET /api/products/:id. */}
+                      {product.packages_count}{' '}
+                      {product.packages_count === 1 ? 'package' : 'packages'}
                     </td>
                     <td className="px-4 py-3">
                       {product.is_active ? (
