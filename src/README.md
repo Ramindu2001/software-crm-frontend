@@ -135,8 +135,9 @@ Worth knowing before building against it:
 - **No `GET /api/customers/:id`.** The list carries every column, `address`
   included, and POST/PUT both return the full row — so nothing needs to fetch
   one customer on its own. `getCustomer` narrows the list.
-- **No quotation detail.** There is no `GET /api/quotations/:id`, so line items
-  cannot be read back; the list carries `items_count` and the totals.
+- **No customer or user DELETE.** Both are referenced by history that would be
+  orphaned. Deactivation is the soft delete for users; customers have none,
+  because the table has no status column.
 - **No `updated_at` on tickets.** Only `created_at`, so "recently updated"
   ordering does not exist.
 - **No DELETE anywhere.** Products, customers and the rest are referenced with
@@ -193,6 +194,49 @@ both, guarding a route with it, and running `npm run migrate`.
 reload. A revoked permission takes effect on the API immediately, so the worst
 case is a button that renders until refresh and then 403s if pressed, not
 access that outlives the revoke.
+
+### Quotations are documents, not rows
+
+A quotation is an offer with a validity window and terms attached, so
+`features/quotations` is built around one rule: **what the customer was sent
+must never change.**
+
+Line items carry a *snapshot* — product name, package name, all three fees, the
+package's features and the product's requirements — copied when the quotation
+is created. Nothing in the document joins to live product data, so repricing or
+renaming a product leaves issued quotations untouched. Editing a product even
+regenerates its package ids (`PUT /api/products/:id` deletes and reinserts
+them), which is exactly why `quotation_items.package_id` carries no foreign key
+and the snapshot is what renders.
+
+The one deliberate exception is the **company letterhead**, read live from
+`company_settings` on every detail response, so a new address or logo applies to
+every quotation at once. Default terms sit in between: copied onto a quotation
+at creation, then editable per quotation, so changing the company default never
+rewrites an offer already sent.
+
+```
+features/quotations/
+├── api/                 list, detail, create, update, status
+├── components/
+│   ├── QuotationDocument.jsx    the printed sheet — used by BOTH the
+│   │                            detail view and the print route, so there
+│   │                            is no second template to keep in sync
+│   ├── QuotationFormPage.jsx    the builder
+│   ├── QuotationDetailPage.jsx
+│   └── QuotationPrintPage.jsx   mounted OUTSIDE the dashboard shell
+└── hooks/useQuotationBuilder.js product cache + derived pricing
+```
+
+`/quotations/:id/print` is a top-level route rather than a child of
+`DashboardLayout`: a print view has to be the document and nothing else, and
+`print:hidden` on an entire app shell is a worse answer than not rendering it.
+Printing is the browser's — `@page` sets A4 and `print-color-adjust: exact`
+keeps the template's blue section bars, which browsers strip by default.
+
+Pricing is server-computed and never read from the request. The plan picks the
+fee: **Annual → first-year fee** (with the renewal shown from year two),
+**Monthly → monthly price**. The builder's running total is a preview only.
 
 ### Access control lives in `features/users`
 

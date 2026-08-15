@@ -1,15 +1,19 @@
-import { useState } from 'react'
-import { FileText, Search, SearchX, TriangleAlert, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { FileText, Plus, Search, SearchX, TriangleAlert, X } from 'lucide-react'
 import { EmptyState, PageHeader } from '@/components/common'
 import { Button, Input, Pagination, Select } from '@/components/ui'
-import { useAuth } from '@/features/auth'
-import { toast } from '@/lib/toastStore'
-import { useQuotations } from '../hooks/useQuotations'
-import { updateQuotationStatus } from '../api'
+import { PERMISSIONS, useAuth } from '@/features/auth'
+import { useQuotations } from '../hooks'
 import { QUOTATION_STATUS_OPTIONS } from '../constants'
 import { QuotationsTable } from './QuotationsTable'
-import { CreateQuotationModal } from './CreateQuotationModal'
 
+/**
+ * Quotation management.
+ *
+ * Search covers the customer's company name, contact person and the reference
+ * itself — a customer quoting "260815-075" back at you should find it, which
+ * is the most common way anyone looks a quotation up.
+ */
 export function QuotationsPage() {
   const {
     quotations,
@@ -29,41 +33,9 @@ export function QuotationsPage() {
     setPage,
   } = useQuotations()
 
-  // POST /api/quotations and PATCH /:id/status are both Admin/Support —
-  // quotations are a commercial document, so Developers read but do not price.
+  const navigate = useNavigate()
   const { can } = useAuth()
-  const canCreate = can('quotations:create')
-  const canSetStatus = can('quotations:setStatus')
-
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [pendingId, setPendingId] = useState(null)
-
-  const handleCreated = (quotation) => {
-    setIsCreateOpen(false)
-    // Refetch rather than splice: the 201 carries only the reference and
-    // totals, not a full row, and active filters may exclude it anyway.
-    refresh()
-    toast.success('Quotation created', {
-      description: `${quotation.id} · ${CURRENCY.format(quotation.finalAmount)}`,
-    })
-  }
-
-  const handleStatusChange = async (quotationId, status) => {
-    setPendingId(quotationId)
-    try {
-      const result = await updateQuotationStatus(quotationId, status)
-      refresh()
-      toast.success('Status updated', {
-        description: `${result.id} is now ${result.status.toLowerCase()}.`,
-      })
-    } catch (caught) {
-      toast.error('Could not update the status', {
-        description: caught.detail ?? caught.message,
-      })
-    } finally {
-      setPendingId(null)
-    }
-  }
+  const canCreate = can(PERMISSIONS.QUOTATIONS_CREATE)
 
   const isEmpty = !isLoading && quotations.length === 0
 
@@ -76,8 +48,9 @@ export function QuotationsPage() {
         description="Quotations raised for customers, priced from the catalogue."
         actions={
           canCreate && (
-            <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-              Create quotation
+            <Button size="sm" onClick={() => navigate('/quotations/new')}>
+              <Plus className="mr-1.5 size-4" aria-hidden="true" />
+              New quotation
             </Button>
           )
         }
@@ -89,7 +62,7 @@ export function QuotationsPage() {
           value={filters.query}
           onChange={(event) => setFilter('query', event.target.value)}
           aria-label="Search quotations"
-          placeholder="Search by customer"
+          placeholder="Search customer or reference"
           leadingIcon={<Search className="size-4" />}
           wrapperClassName="w-full sm:w-72"
         />
@@ -129,6 +102,8 @@ export function QuotationsPage() {
           }
         />
       ) : isEmpty ? (
+        // Distinct copy for "nothing matched" vs "nothing exists" — telling a
+        // user with active filters that there are no quotations is misleading.
         hasActiveFilters ? (
           <EmptyState
             icon={SearchX}
@@ -144,10 +119,10 @@ export function QuotationsPage() {
           <EmptyState
             icon={FileText}
             title="No quotations yet"
-            description="Quotations will appear here once your team creates them."
+            description="Pick a customer, a product and a package, and the quotation builds itself from the catalogue."
             action={
               canCreate && (
-                <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                <Button as={Link} to="/quotations/new" size="sm">
                   Create the first quotation
                 </Button>
               )
@@ -161,9 +136,7 @@ export function QuotationsPage() {
             sort={sort}
             onToggleSort={toggleSort}
             isLoading={isLoading}
-            canSetStatus={canSetStatus}
-            pendingId={pendingId}
-            onStatusChange={handleStatusChange}
+            canEdit={canCreate}
           />
 
           <Pagination
@@ -174,19 +147,6 @@ export function QuotationsPage() {
           />
         </>
       )}
-
-      {isCreateOpen && (
-        <CreateQuotationModal
-          onClose={() => setIsCreateOpen(false)}
-          onCreated={handleCreated}
-        />
-      )}
     </>
   )
 }
-
-const CURRENCY = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-  maximumFractionDigits: 2,
-})

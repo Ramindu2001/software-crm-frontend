@@ -2,28 +2,29 @@ import { api } from '@/lib/apiClient'
 import { pageResult, unwrap } from '@/lib/apiEnvelope'
 
 /**
- * Real quotation endpoints.
+ * Quotations — the commercial document.
  *
- *   GET   /api/quotations             any logged-in   paginated + filtered
- *   POST  /api/quotations             Admin, Support  create with line items
- *   PATCH /api/quotations/:id/status  Admin, Support  approve / reject / reset
+ *   GET   /api/quotations             quotations:view       list
+ *   GET   /api/quotations/:id         quotations:view       the full document
+ *   POST  /api/quotations             quotations:create     generate
+ *   PUT   /api/quotations/:id         quotations:create     edit while Pending
+ *   PATCH /api/quotations/:id/status  quotations:setStatus  approve / reject
  *
- * There is no GET /:id, so line items cannot be read back once written. The
- * list carries `items_count` and every total, which is what the table shows;
- * a quotation detail view needs that endpoint first.
+ * ── Snapshot ──
+ * Line items carry a COPY of the product name, package name and all three fees
+ * taken when the quotation was created, plus the package's features and the
+ * product's requirements. A quotation sent in July still reads the same in
+ * December even if the product was repriced or renamed. Nothing here joins to
+ * live product data.
  *
- * ── Money ──
- * Every amount is computed server-side in integer cents and is NOT accepted
- * from the request: a client that could post its own `total_amount` could
- * quote itself any price. What we send is quantity and unit_price per line,
- * plus an optional discount; what comes back is total_amount, discount and
- * final_amount.
+ * The company letterhead is the deliberate exception — it arrives on the
+ * detail response read live, so a new address or logo applies to every
+ * quotation at once.
  *
- * ── References ──
- * Each row carries both `id` ("QT-2026-001", for display) and `quotation_id`
- * (the numeric key). The reference is derived rather than stored, so resolving
- * one costs the server an extra lookup — `quotationId` is preferred in the
- * PATCH URL for exactly that reason.
+ * ── Pricing ──
+ * Every amount is computed server-side and never read from the request. What
+ * we send is the package, the plan and a quantity; the plan chooses which fee
+ * prices the line (Annual → first-year fee, Monthly → monthly price).
  */
 
 export class NotFoundError extends Error {
@@ -35,12 +36,22 @@ export class NotFoundError extends Error {
 }
 
 /**
- * UI sort keys mapped to the columns the API will order by.
- * `customerName` is absent: it lives on the joined customers table and is not
- * in the backend's allowlist, so asking for it returns 400.
+ * Thrown when a quotation can no longer be edited because it has been approved
+ * or rejected. Its own type so the UI can explain rather than show a generic
+ * failure — the answer is "create a new quotation", not "try again".
  */
+export class NotEditableError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = 'NotEditableError'
+    this.status = 409
+  }
+}
+
+/** UI sort keys mapped to the columns the API will order by. */
 const SORT_COLUMNS = {
   id: 'id',
+  reference: 'reference',
   createdAt: 'created_at',
   totalAmount: 'total_amount',
   finalAmount: 'final_amount',
@@ -50,21 +61,103 @@ const SORT_COLUMNS = {
 
 const DEFAULT_SORT_KEY = 'createdAt'
 
-function mapQuotation(raw) {
+const num = (value) => Number(value ?? 0)
+
+function mapListItem(raw) {
   return {
-    // The display reference. Derived per year, so it is stable to read but
-    // must never be stored client-side as a durable key.
+    // The printed reference, e.g. "260815-075".
     id: raw.id,
     quotationId: raw.quotation_id,
     customerId: raw.customer?.id ?? null,
     customerName: raw.customer?.company_name ?? 'Unknown',
-    totalAmount: Number(raw.total_amount ?? 0),
-    discount: Number(raw.discount ?? 0),
-    finalAmount: Number(raw.final_amount ?? 0),
+    contactPerson: raw.customer?.contact_person ?? '',
+    preparedBy: raw.prepared_by ?? '',
+    totalAmount: num(raw.total_amount),
+    discount: num(raw.discount),
+    discountPercent: num(raw.discount_percent),
+    finalAmount: num(raw.final_amount),
     status: raw.status,
+    validUntil: raw.valid_until ?? null,
     itemsCount: Number(raw.items_count ?? 0),
     createdAt: raw.created_at,
   }
+}
+
+function mapItem(raw) {
+  return {
+    id: raw.id,
+    productId: raw.product_id,
+    productName: raw.product_name,
+    packageId: raw.package_id,
+    packageName: raw.package_name,
+    plan: raw.plan,
+    quantity: Number(raw.quantity ?? 1),
+    unitPrice: num(raw.unit_price),
+    totalPrice: num(raw.total_price),
+    // All three travel with the line so the document can show the renewal and
+    // monthly figures beside the plan that was chosen.
+    firstYearFee: num(raw.first_year_fee),
+    renewalFee: num(raw.renewal_fee),
+    monthlyPrice: num(raw.monthly_price),
+    features: raw.features ?? [],
+    basicRequirements: raw.basic_requirements ?? [],
+    softwareRequirements: raw.software_requirements ?? [],
+  }
+}
+
+function mapDetail(raw) {
+  return {
+    ...mapListItem(raw),
+    customer: {
+      id: raw.customer?.id ?? null,
+      name: raw.customer?.company_name ?? 'Unknown',
+      contactPerson: raw.customer?.contact_person ?? '',
+      email: raw.customer?.email ?? '',
+      phone: raw.customer?.phone ?? '',
+      address: raw.customer?.address ?? '',
+    },
+    company: {
+      companyName: raw.company?.company_name ?? '',
+      address: raw.company?.address ?? '',
+      phone: raw.company?.phone ?? '',
+      email: raw.company?.email ?? '',
+      website: raw.company?.website ?? '',
+      logoPath: raw.company?.logo_path ?? '',
+    },
+    paymentTerms: raw.payment_terms ?? '',
+    termsConditions: raw.terms_conditions ?? '',
+    notes: raw.notes ?? '',
+    items: (raw.items ?? []).map(mapItem),
+  }
+}
+
+/** Build the request body POST and PUT share. */
+function toRequestBody(input) {
+  return {
+    customer_id: Number(input.customerId),
+    discount_percent: Number(input.discountPercent) || 0,
+    payment_terms: input.paymentTerms?.trim() || undefined,
+    terms_conditions: input.termsConditions?.trim() || undefined,
+    notes: input.notes?.trim() || undefined,
+    items: (input.items ?? []).map((item) => ({
+      product_id: Number(item.productId),
+      package_id: Number(item.packageId),
+      plan: item.plan,
+      quantity: Number(item.quantity) || 1,
+      // Omitted when blank so the server prices the line from the package.
+      // Sending '' would be a validation failure rather than "use the default".
+      unit_price:
+        item.unitPrice === '' || item.unitPrice === undefined || item.unitPrice === null
+          ? undefined
+          : Number(item.unitPrice),
+    })),
+  }
+}
+
+function translateError(error) {
+  if (error.status === 404) return new NotFoundError(error.message)
+  if (error.status === 409) return new NotEditableError(error.message)
+  return error
 }
 
 /**
@@ -86,7 +179,7 @@ export async function listQuotations({
 
   const payload = await api.get('/quotations', {
     params: {
-      // Matches the customer's company name or contact person.
+      // Matches company name, contact person, or the reference itself.
       search: query,
       status,
       customer_id: customerId,
@@ -97,57 +190,68 @@ export async function listQuotations({
     signal,
   })
 
-  return pageResult(payload, mapQuotation, { page, perPage })
+  return pageResult(payload, mapListItem, { page, perPage })
 }
 
 /**
- * Generate a quotation and its line items in one transaction. Requires the
- * Admin or Support role.
+ * The whole document: customer block, snapshot line items, terms, and the live
+ * company letterhead. One request renders the printable quotation.
  *
- * The 201 carries only the reference and the two totals — not the whole
- * quotation — so this returns exactly that. Callers refetch the list to see
- * the new row in context rather than splicing in a partial record.
- *
- * @param {{customerId: number|string, discount?: number|string,
- *   items: Array<{productId: number|string, quantity: number|string,
- *   unitPrice: number|string}>}} input
- * @returns {Promise<{id: string, totalAmount: number, finalAmount: number}>}
+ * @param {number|string} id Numeric id (cheaper) or "260815-075".
+ * @throws {NotFoundError}
  */
-export async function createQuotation(input) {
-  const payload = await api.post('/quotations', {
-    customer_id: Number(input.customerId),
-    discount: Number(input.discount) || 0,
-    items: (input.items ?? []).map((item) => ({
-      product_id: Number(item.productId),
-      quantity: Number(item.quantity),
-      // Client-supplied on purpose, so a negotiated price is possible. It is
-      // never derived from the product's package pricing.
-      unit_price: Number(item.unitPrice),
-    })),
-  })
-
-  const data = unwrap(payload) ?? {}
-
-  return {
-    id: data.quotation_id,
-    totalAmount: Number(data.total_amount ?? 0),
-    finalAmount: Number(data.final_amount ?? 0),
+export async function getQuotation(id, { signal } = {}) {
+  try {
+    const payload = await api.get(`/quotations/${encodeURIComponent(id)}`, { signal })
+    return mapDetail(unwrap(payload))
+  } catch (error) {
+    throw translateError(error)
   }
 }
 
 /**
- * Approve, reject, or reset a quotation. Requires Admin or Support.
+ * Generate a quotation and its line items in one transaction.
+ * Requires quotations:create.
  *
- * Transitions are unrestricted — an approved quotation can still be corrected
- * to rejected, because the API enforces no workflow.
+ * Returns the full created document, so the caller can go straight to the
+ * preview without a follow-up read.
+ */
+export async function createQuotation(input) {
+  try {
+    const payload = await api.post('/quotations', toRequestBody(input))
+    return mapDetail(unwrap(payload))
+  } catch (error) {
+    throw translateError(error)
+  }
+}
+
+/**
+ * Replace a Pending quotation's content. Requires quotations:create.
  *
- * Approving does NOT generate an invoice; that side effect is not implemented
- * server-side.
+ * Line items are rewritten, which re-snapshots them from the CURRENT product
+ * data — so editing a quotation deliberately refreshes its pricing and
+ * features. Approved and Rejected quotations are refused with a
+ * NotEditableError.
  *
- * @param {number|string} id Numeric key (cheaper) or "QT-2026-001".
- * @param {string} status Pending | Approved | Rejected
+ * @throws {NotFoundError|NotEditableError}
+ */
+export async function updateQuotation(id, input) {
+  try {
+    const payload = await api.put(
+      `/quotations/${encodeURIComponent(id)}`,
+      toRequestBody(input),
+    )
+    return mapDetail(unwrap(payload))
+  } catch (error) {
+    throw translateError(error)
+  }
+}
+
+/**
+ * Approve, reject, or reset. Requires quotations:setStatus.
+ * Transitions are unrestricted — the API enforces no workflow.
+ *
  * @returns {Promise<{id: string, status: string}>}
- * @throws {NotFoundError}
  */
 export async function updateQuotationStatus(id, status) {
   try {
@@ -158,9 +262,6 @@ export async function updateQuotationStatus(id, status) {
     const data = unwrap(payload) ?? {}
     return { id: data.quotation_id, status: data.status ?? status }
   } catch (error) {
-    if (error.status === 404) {
-      throw new NotFoundError(`Quotation ${id} was not found.`)
-    }
-    throw error
+    throw translateError(error)
   }
 }

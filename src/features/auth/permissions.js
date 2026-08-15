@@ -55,6 +55,7 @@ export const PERMISSIONS = {
   USERS_VIEW: 'users:view',
   USERS_MANAGE: 'users:manage',
   ROLES_MANAGE: 'roles:manage',
+  COMPANY_MANAGE: 'company:manage',
 }
 
 const KNOWN_KEYS = new Set(Object.values(PERMISSIONS))

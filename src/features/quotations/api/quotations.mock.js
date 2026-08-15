@@ -1,20 +1,26 @@
 import { matchesQuery, paginate, sortRows } from '@/lib/apiEnvelope'
 import { MOCK_QUOTATIONS } from './mockQuotations'
 import { MOCK_CUSTOMERS } from '../../customers/api/mockCustomers'
+import { MOCK_PRODUCTS } from '../../products/api/mockProducts'
+import { getCompanySettings } from '../../company/api'
 
 /**
  * Mock quotations API.
  *
- * Matches quotations.http.js, including the two places the API returns less
- * than you might expect: `createQuotation` answers with the reference and
- * totals only, and there is no `getQuotation` at all, because no endpoint can
- * read a quotation's line items back.
+ * Mirrors quotations.http.js, including the behaviour that defines the
+ * feature: creating a quotation SNAPSHOTS the product name, package name, all
+ * three fees, the package's features and the product's requirements. Editing
+ * the mock product afterwards leaves stored quotations untouched, exactly as
+ * the real API behaves.
  *
- * Totals are computed here rather than taken from the input, mirroring the
- * server — a client that could set its own total could quote any price.
+ * A mock that joined to live product data would let the UI be built against a
+ * document that rewrites itself, and the bug would only appear in production.
+ *
+ * No top-level function calls — the bundler can tree-shake this module when
+ * the HTTP implementation is selected.
  */
 
-const LATENCY_MS = 350
+const LATENCY_MS = 340
 
 const delay = (ms = LATENCY_MS) =>
   new Promise((resolve) => setTimeout(resolve, ms))
@@ -27,49 +33,154 @@ export class NotFoundError extends Error {
   }
 }
 
+export class NotEditableError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = 'NotEditableError'
+    this.status = 409
+  }
+}
+
 let store = null
 
 function getStore() {
-  store ??= [...MOCK_QUOTATIONS]
+  store ??= MOCK_QUOTATIONS.map((quotation) => structuredClone(quotation))
   return store
 }
 
-const customerName = (customerId) =>
-  MOCK_CUSTOMERS.find((customer) => customer.id === customerId)?.company_name ??
-  'Unknown'
+const customerById = (id) => MOCK_CUSTOMERS.find((entry) => entry.id === Number(id))
+const productById = (id) => MOCK_PRODUCTS.find((entry) => entry.id === Number(id))
 
-/**
- * Derive the QT-YYYY-NNN reference the way the backend does: the count of
- * quotations from the same year with an id at or below this one.
- */
-function toReference(quotation, all) {
-  const year = new Date(quotation.createdAt).getUTCFullYear()
-  const sequence = all.filter(
-    (entry) =>
-      new Date(entry.createdAt).getUTCFullYear() === year &&
-      entry.id <= quotation.id,
-  ).length
-
-  return `QT-${year}-${String(sequence).padStart(3, '0')}`
+/** "260815-075" — YYMMDD of issue, then the row id as the sequence. */
+function formatReference(createdAt, id) {
+  const stamp = new Date(createdAt)
+  const yy = String(stamp.getFullYear()).slice(2)
+  const mm = String(stamp.getMonth() + 1).padStart(2, '0')
+  const dd = String(stamp.getDate()).padStart(2, '0')
+  return `${yy}${mm}${dd}-${String(id).padStart(3, '0')}`
 }
 
-function mapQuotation(quotation, all) {
+function mapListItem(quotation) {
+  const customer = customerById(quotation.customerId)
   return {
-    id: toReference(quotation, all),
+    id: formatReference(quotation.createdAt, quotation.id),
     quotationId: quotation.id,
     customerId: quotation.customerId,
-    customerName: customerName(quotation.customerId),
+    customerName: customer?.company_name ?? 'Unknown',
+    contactPerson: customer?.contact_person ?? '',
+    preparedBy: quotation.preparedByName ?? '',
     totalAmount: quotation.totalAmount,
     discount: quotation.discount,
+    discountPercent: quotation.discountPercent ?? 0,
     finalAmount: quotation.finalAmount,
     status: quotation.status,
-    itemsCount: quotation.itemsCount,
+    validUntil: quotation.validUntil ?? null,
+    itemsCount: quotation.items.length,
     createdAt: quotation.createdAt,
+  }
+}
+
+async function mapDetail(quotation) {
+  const customer = customerById(quotation.customerId)
+  const company = await getCompanySettings()
+
+  return {
+    ...mapListItem(quotation),
+    customer: {
+      id: customer?.id ?? null,
+      name: customer?.company_name ?? 'Unknown',
+      contactPerson: customer?.contact_person ?? '',
+      email: customer?.email ?? '',
+      phone: customer?.phone ?? '',
+      address: customer?.address ?? '',
+    },
+    // Live, matching the API — the letterhead is never snapshotted.
+    company: {
+      companyName: company.companyName,
+      address: company.address,
+      phone: company.phone,
+      email: company.email,
+      website: company.website,
+      logoPath: company.logoPath,
+    },
+    paymentTerms: quotation.paymentTerms ?? '',
+    termsConditions: quotation.termsConditions ?? '',
+    notes: quotation.notes ?? '',
+    items: quotation.items.map((item) => structuredClone(item)),
+  }
+}
+
+/**
+ * Resolve a package and build the snapshot line, mirroring priceItems() on the
+ * server — including rejecting a package that belongs to a different product,
+ * which is what stops one product's name being paired with another's pricing.
+ */
+function buildLine(rawItem, index) {
+  const at = `items[${index}]`
+  const product = productById(rawItem.productId)
+  if (!product) throw validationError([`${at}: product_id ${rawItem.productId} does not exist`])
+
+  const pkg = product.packages.find((entry) => entry.id === Number(rawItem.packageId))
+  if (!pkg) {
+    throw validationError([
+      `${at}: package_id ${rawItem.packageId} does not belong to product ${rawItem.productId}`,
+    ])
+  }
+
+  const quantity = Number(rawItem.quantity) || 1
+  const listPrice = rawItem.plan === 'Annual' ? pkg.first_year_price : pkg.monthly_price
+  const unitPrice =
+    rawItem.unitPrice === '' || rawItem.unitPrice === undefined || rawItem.unitPrice === null
+      ? Number(listPrice)
+      : Number(rawItem.unitPrice)
+
+  return {
+    id: Math.floor(Math.random() * 1e9),
+    productId: product.id,
+    productName: product.name,
+    packageId: pkg.id,
+    packageName: pkg.name,
+    plan: rawItem.plan,
+    quantity,
+    unitPrice,
+    totalPrice: Number((unitPrice * quantity).toFixed(2)),
+    firstYearFee: Number(pkg.first_year_price),
+    renewalFee: Number(pkg.second_year_price),
+    monthlyPrice: Number(pkg.monthly_price),
+    // The snapshot: copied now, never re-read.
+    features: [...(pkg.features ?? [])],
+    basicRequirements: [...(product.basic_requirements ?? [])],
+    softwareRequirements: [...(product.software_requirements ?? [])],
+  }
+}
+
+function validationError(messages) {
+  const error = new Error('Validation failed')
+  error.status = 422
+  error.messages = messages
+  return error
+}
+
+function priceQuotation(input) {
+  const items = (input.items ?? []).map(buildLine)
+  const totalAmount = Number(
+    items.reduce((sum, item) => sum + item.totalPrice, 0).toFixed(2),
+  )
+  const discountPercent = Number(input.discountPercent) || 0
+  const discount = Number(((totalAmount * discountPercent) / 100).toFixed(2))
+
+  return {
+    items,
+    totalAmount,
+    discountPercent,
+    discount,
+    finalAmount: Number((totalAmount - discount).toFixed(2)),
   }
 }
 
 const SORT_ACCESSORS = {
   id: (quotation) => quotation.quotationId,
+  reference: (quotation) => quotation.id,
   createdAt: (quotation) => new Date(quotation.createdAt).getTime(),
   totalAmount: (quotation) => quotation.totalAmount,
   finalAmount: (quotation) => quotation.finalAmount,
@@ -77,8 +188,8 @@ const SORT_ACCESSORS = {
   status: (quotation) => quotation.status,
 }
 
-/** The API searches the customer's company name and contact person. */
-const SEARCH_FIELDS = ['customerName']
+/** The API searches company name, contact person and the reference. */
+const SEARCH_FIELDS = ['customerName', 'contactPerson', 'id']
 
 export async function listQuotations({
   query = '',
@@ -91,15 +202,11 @@ export async function listQuotations({
 } = {}) {
   await delay()
 
-  const all = getStore()
-
-  const rows = all
-    .map((quotation) => mapQuotation(quotation, all))
+  const rows = getStore()
+    .map(mapListItem)
     .filter((quotation) => {
       if (status && quotation.status !== status) return false
-      if (customerId && String(quotation.customerId) !== String(customerId)) {
-        return false
-      }
+      if (customerId && String(quotation.customerId) !== String(customerId)) return false
       return matchesQuery(quotation, query, SEARCH_FIELDS)
     })
 
@@ -108,62 +215,108 @@ export async function listQuotations({
   return paginate(sortRows(rows, accessor, sortDir), { page, perPage })
 }
 
-/**
- * Returns the reference and totals only, matching the API's 201 body.
- *
- * @returns {Promise<{id: string, totalAmount: number, finalAmount: number}>}
- */
-export async function createQuotation(input) {
-  await delay(400)
-
-  const totalAmount = (input.items ?? []).reduce(
-    (sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0),
-    0,
+function findQuotation(id) {
+  return getStore().find(
+    (quotation) =>
+      String(quotation.id) === String(id) ||
+      formatReference(quotation.createdAt, quotation.id) === String(id),
   )
-  const discount = Number(input.discount) || 0
-  const finalAmount = totalAmount - discount
+}
+
+export async function getQuotation(id) {
+  await delay(240)
+
+  const quotation = findQuotation(id)
+  if (!quotation) throw new NotFoundError(`Quotation ${id} was not found.`)
+
+  return mapDetail(quotation)
+}
+
+export async function createQuotation(input) {
+  await delay(460)
+
+  const customer = customerById(input.customerId)
+  if (!customer) {
+    throw validationError([`customer_id ${input.customerId} does not exist`])
+  }
+
+  const priced = priceQuotation(input)
+  const company = await getCompanySettings()
+  const createdAt = new Date()
+
+  const validUntil = new Date(createdAt)
+  validUntil.setDate(validUntil.getDate() + (company.quotationValidityDays || 3))
 
   const quotation = {
     id: getStore().reduce((max, entry) => Math.max(max, entry.id), 0) + 1,
     customerId: Number(input.customerId),
-    totalAmount,
-    discount,
-    finalAmount,
-    // The API always creates as Pending; status is not an input.
+    // The real API takes this from the bearer token; the mock reads the
+    // session the auth mock wrote, which is the same fact by another route.
+    preparedByName: currentUserName(),
+    ...priced,
     status: 'Pending',
-    itemsCount: (input.items ?? []).length,
-    createdAt: new Date().toISOString(),
+    paymentTerms: input.paymentTerms?.trim() || company.paymentTerms,
+    termsConditions: input.termsConditions?.trim() || company.termsConditions,
+    notes: input.notes?.trim() ?? '',
+    validUntil: validUntil.toISOString().slice(0, 10),
+    createdAt: createdAt.toISOString(),
   }
 
   store = [...getStore(), quotation]
-
-  return {
-    id: toReference(quotation, getStore()),
-    totalAmount,
-    finalAmount,
-  }
+  return mapDetail(quotation)
 }
 
-/**
- * @param {number|string} id Numeric key or "QT-2026-001".
- * @returns {Promise<{id: string, status: string}>}
- * @throws {NotFoundError}
- */
+export async function updateQuotation(id, input) {
+  await delay(420)
+
+  const existing = findQuotation(id)
+  if (!existing) throw new NotFoundError(`Quotation ${id} was not found.`)
+
+  if (existing.status !== 'Pending') {
+    throw new NotEditableError(
+      `Quotation ${formatReference(existing.createdAt, existing.id)} is ${existing.status} ` +
+        'and can no longer be edited. Create a new quotation instead.',
+    )
+  }
+
+  const priced = priceQuotation(input)
+  const updated = {
+    ...existing,
+    customerId: Number(input.customerId),
+    ...priced,
+    paymentTerms: input.paymentTerms?.trim() ?? '',
+    termsConditions: input.termsConditions?.trim() ?? '',
+    notes: input.notes?.trim() ?? '',
+  }
+
+  store = getStore().map((quotation) =>
+    quotation.id === existing.id ? updated : quotation,
+  )
+  return mapDetail(updated)
+}
+
 export async function updateQuotationStatus(id, status) {
-  await delay(250)
+  await delay(260)
 
-  const all = getStore()
-  const index = all.findIndex(
-    (quotation) =>
-      String(quotation.id) === String(id) ||
-      toReference(quotation, all) === String(id).toUpperCase(),
-  )
-  if (index === -1) throw new NotFoundError(`Quotation ${id} was not found.`)
+  const existing = findQuotation(id)
+  if (!existing) throw new NotFoundError(`Quotation ${id} was not found.`)
 
-  const updated = { ...all[index], status }
-  store = all.map((quotation, position) =>
-    position === index ? updated : quotation,
+  const updated = { ...existing, status }
+  store = getStore().map((quotation) =>
+    quotation.id === existing.id ? updated : quotation,
   )
 
-  return { id: toReference(updated, getStore()), status }
+  return { id: formatReference(updated.createdAt, updated.id), status }
+}
+
+function currentUserName() {
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    try {
+      const raw = storage.getItem('synnex:session')
+      if (raw) return JSON.parse(raw)?.user?.name ?? 'Unknown'
+    } catch {
+      // Storage unavailable or corrupt — try the next one.
+    }
+  }
+  return 'Unknown'
 }

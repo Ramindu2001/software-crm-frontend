@@ -1,5 +1,7 @@
+import { Suspense } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
+import { FullPageLoader } from '@/components/common'
 import { LoginPage, PERMISSIONS } from '@/features/auth'
 import { NotFoundPage } from './NotFoundPage'
 import { RequireAuth, RequireGuest, RequirePermission } from './guards'
@@ -14,6 +16,10 @@ import {
   UsersPage,
   RolesPage,
   QuotationsPage,
+  QuotationFormPage,
+  QuotationDetailPage,
+  QuotationPrintPage,
+  CompanySettingsPage,
   ProductsPage,
   ProductDetailPage,
   ProductFormPage,
@@ -44,6 +50,24 @@ export const router = createBrowserRouter([
       <RequireGuest>
         <LoginPage />
       </RequireGuest>
+    ),
+  },
+  {
+    /**
+     * The printable quotation, deliberately OUTSIDE the dashboard shell.
+     *
+     * A print view has to be the document and nothing else — sharing the
+     * layout would mean printing around a sidebar, and `print:hidden` on the
+     * whole shell is a worse answer than not rendering it. Still behind
+     * RequireAuth: it is a customer's pricing.
+     */
+    path: '/quotations/:quotationId/print',
+    element: (
+      <RequireAuth>
+        <Suspense fallback={<FullPageLoader label="Preparing the quotation…" />}>
+          <QuotationPrintPage />
+        </Suspense>
+      </RequireAuth>
     ),
   },
   {
@@ -107,6 +131,31 @@ export const router = createBrowserRouter([
         handle: { title: 'Quotations' },
       },
       {
+        // Before ':quotationId', so "new" is never read as a reference.
+        path: 'quotations/new',
+        element: (
+          <RequirePermission permissions={[PERMISSIONS.QUOTATIONS_CREATE]}>
+            <QuotationFormPage />
+          </RequirePermission>
+        ),
+        handle: { title: 'New quotation' },
+      },
+      {
+        path: 'quotations/:quotationId',
+        element: <QuotationDetailPage />,
+        // A function title lets the dynamic route show the reference.
+        handle: { title: (match) => match.params.quotationId },
+      },
+      {
+        path: 'quotations/:quotationId/edit',
+        element: (
+          <RequirePermission permissions={[PERMISSIONS.QUOTATIONS_CREATE]}>
+            <QuotationFormPage />
+          </RequirePermission>
+        ),
+        handle: { title: 'Edit quotation' },
+      },
+      {
         // Settings is a shell with routed sub-sections, so each one is
         // linkable and survives a refresh. The permission guards sit on the
         // children rather than the layout: Profile is for everyone, and only
@@ -133,6 +182,13 @@ export const router = createBrowserRouter([
               </RequirePermission>
             ),
             handle: { title: 'Roles & permissions' },
+          },
+          {
+            // Readable by anyone — the letterhead is not a secret, and the
+            // page disables its own controls without company:manage.
+            path: 'company',
+            element: <CompanySettingsPage />,
+            handle: { title: 'Company details' },
           },
         ],
       },

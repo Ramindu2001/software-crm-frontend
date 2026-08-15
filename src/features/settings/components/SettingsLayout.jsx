@@ -33,6 +33,14 @@ const TABS = [
     label: 'Roles & permissions',
     permission: PERMISSIONS.ROLES_MANAGE,
   },
+  {
+    // Visible to everyone: the letterhead appears on every quotation, so
+    // knowing what it says is useful even without the right to change it.
+    // The page disables its own controls without company:manage.
+    to: '/settings/company',
+    label: 'Company details',
+    permission: null,
+  },
 ]
 
 export function SettingsLayout() {

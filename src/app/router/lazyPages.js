@@ -50,6 +50,22 @@ export const QuotationsPage = lazy(() =>
   import('@/features/quotations').then((m) => ({ default: m.QuotationsPage })),
 )
 
+export const QuotationFormPage = lazy(() =>
+  import('@/features/quotations').then((m) => ({ default: m.QuotationFormPage })),
+)
+
+export const QuotationDetailPage = lazy(() =>
+  import('@/features/quotations').then((m) => ({ default: m.QuotationDetailPage })),
+)
+
+export const QuotationPrintPage = lazy(() =>
+  import('@/features/quotations').then((m) => ({ default: m.QuotationPrintPage })),
+)
+
+export const CompanySettingsPage = lazy(() =>
+  import('@/features/company').then((m) => ({ default: m.CompanySettingsPage })),
+)
+
 export const ProductsPage = lazy(() =>
   import('@/features/products').then((m) => ({ default: m.ProductsPage })),
 )

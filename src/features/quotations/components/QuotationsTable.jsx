@@ -1,33 +1,23 @@
-import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowDown, ArrowUp, ChevronsUpDown, Pencil, Printer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
-import { Badge, Card, Select } from '@/components/ui'
-import { QUOTATION_STATUS, QUOTATION_STATUS_OPTIONS } from '../constants'
+import { Badge, Card } from '@/components/ui'
+import { formatRupees, isEditable, QUOTATION_STATUS } from '../constants'
 
 /**
- * Columns are what the list endpoint returns. There is no quotation date
- * column in the schema — `created_at` is when it was raised — and no line
- * items, because no endpoint reads them back; `items_count` stands in.
- *
- * `customerName` is not sortable: it lives on the joined customers table and
- * is not in the API's sort allowlist.
+ * `sortable: false` marks columns outside the API's sort allowlist — customer
+ * lives on the joined customers table, and asking for it returns 400.
  */
 const COLUMNS = [
-  { key: 'id', label: 'Reference', width: 'w-36' },
+  { key: 'reference', label: 'Reference', width: 'w-32' },
   { key: 'customerName', label: 'Customer', sortable: false },
-  { key: 'createdAt', label: 'Raised', width: 'w-32' },
-  { key: 'discount', label: 'Discount', width: 'w-28 text-right', align: 'right' },
-  { key: 'finalAmount', label: 'Total', width: 'w-32 text-right', align: 'right' },
-  { key: 'status', label: 'Status', width: 'w-40' },
+  { key: 'createdAt', label: 'Date', width: 'w-28' },
+  { key: 'finalAmount', label: 'Total', width: 'w-32', align: 'right' },
+  { key: 'status', label: 'Status', width: 'w-28' },
 ]
 
 const ARIA_SORT = { asc: 'ascending', desc: 'descending' }
-
-const CURRENCY_FORMATTER = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-  maximumFractionDigits: 2,
-})
 
 function SortIcon({ isActive, direction }) {
   if (!isActive) {
@@ -43,11 +33,11 @@ function SortIcon({ isActive, direction }) {
   return <Icon className="size-3.5 text-brand-600" aria-hidden="true" />
 }
 
-function SkeletonRows({ rows = 6 }) {
+function SkeletonRows({ rows = 6, columnCount }) {
   return Array.from({ length: rows }, (_, index) => (
     <tr key={index} className="animate-pulse">
-      {COLUMNS.map((column) => (
-        <td key={column.key} className={cn('px-4 py-3.5', column.responsive)}>
+      {Array.from({ length: columnCount }, (_, cell) => (
+        <td key={cell} className="px-4 py-3.5">
           <div className="h-3 rounded bg-line" />
         </td>
       ))}
@@ -55,14 +45,30 @@ function SkeletonRows({ rows = 6 }) {
   ))
 }
 
-function QuotationRow({ quotation, canSetStatus, pendingId, onStatusChange }) {
+function QuotationRow({ quotation, canEdit }) {
+  const navigate = useNavigate()
   const meta = QUOTATION_STATUS[quotation.status]
-  const isPending = pendingId === quotation.quotationId
+
+  // Row click is a mouse convenience; the reference link is what keyboard
+  // users and screen readers navigate with. Bail when the click already landed
+  // on an anchor so we don't navigate twice.
+  const handleRowClick = (event) => {
+    if (event.target instanceof Element && event.target.closest('a')) return
+    navigate(`/quotations/${quotation.id}`)
+  }
 
   return (
-    <tr className="transition-colors hover:bg-sunken">
+    <tr
+      onClick={handleRowClick}
+      className="cursor-pointer transition-colors hover:bg-sunken"
+    >
       <td className="px-4 py-3">
-        <span className="font-mono text-xs text-ink-subtle">{quotation.id}</span>
+        <Link
+          to={`/quotations/${quotation.id}`}
+          className="font-mono text-xs font-medium text-ink transition-colors hover:text-brand-700"
+        >
+          {quotation.id}
+        </Link>
       </td>
 
       <td className="px-4 py-3">
@@ -70,8 +76,8 @@ function QuotationRow({ quotation, canSetStatus, pendingId, onStatusChange }) {
           {quotation.customerName}
         </span>
         <span className="block truncate text-xs text-ink-subtle">
-          {quotation.itemsCount}{' '}
-          {quotation.itemsCount === 1 ? 'line item' : 'line items'}
+          {quotation.itemsCount} {quotation.itemsCount === 1 ? 'item' : 'items'}
+          {quotation.preparedBy && ` · ${quotation.preparedBy}`}
         </span>
       </td>
 
@@ -85,39 +91,45 @@ function QuotationRow({ quotation, canSetStatus, pendingId, onStatusChange }) {
       </td>
 
       <td className="px-4 py-3 text-right">
-        <span className="text-sm tabular-nums text-ink-muted">
-          {quotation.discount > 0
-            ? `−${CURRENCY_FORMATTER.format(quotation.discount)}`
-            : '—'}
-        </span>
-      </td>
-
-      <td className="px-4 py-3 text-right">
-        {/* final_amount is what the customer pays: total minus discount. */}
         <span className="text-sm font-medium tabular-nums text-ink">
-          {CURRENCY_FORMATTER.format(quotation.finalAmount)}
+          {formatRupees(quotation.finalAmount)}
         </span>
+        {quotation.discountPercent > 0 && (
+          <span className="block text-xs text-ink-subtle">
+            {quotation.discountPercent}% off
+          </span>
+        )}
       </td>
 
       <td className="px-4 py-3">
-        {canSetStatus ? (
-          // The numeric key rather than the QT- reference: resolving a
-          // reference costs the server an extra lookup query.
-          <Select
-            aria-label={`Status for ${quotation.id}`}
-            value={quotation.status}
-            onChange={(event) =>
-              onStatusChange(quotation.quotationId, event.target.value)
-            }
-            options={QUOTATION_STATUS_OPTIONS}
-            disabled={isPending}
-            wrapperClassName="w-full"
-          />
-        ) : (
-          <Badge tone={meta?.tone ?? 'neutral'} dot>
-            {meta?.label ?? quotation.status}
-          </Badge>
-        )}
+        <Badge tone={meta?.tone ?? 'neutral'} size="sm" dot>
+          {meta?.label ?? quotation.status}
+        </Badge>
+      </td>
+
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-0.5">
+          {/* Editing is offered only while Pending — the API refuses anything
+              else with a 409, so a visible button would be a dead end. */}
+          {canEdit && isEditable(quotation) && (
+            <Link
+              to={`/quotations/${quotation.id}/edit`}
+              className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-surface hover:text-brand-700"
+              aria-label={`Edit ${quotation.id}`}
+              title="Edit"
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+            </Link>
+          )}
+          <Link
+            to={`/quotations/${quotation.id}/print`}
+            className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-surface hover:text-brand-700"
+            aria-label={`Print ${quotation.id}`}
+            title="Print / Save as PDF"
+          >
+            <Printer className="size-4" aria-hidden="true" />
+          </Link>
+        </div>
       </td>
     </tr>
   )
@@ -129,19 +141,14 @@ function QuotationRow({ quotation, canSetStatus, pendingId, onStatusChange }) {
  * @param {{by: string, dir: 'asc'|'desc'}} props.sort
  * @param {(field: string) => void} props.onToggleSort
  * @param {boolean} [props.isLoading]
- * @param {boolean} [props.canSetStatus] Renders the status control instead of
- *   a read-only badge. PATCH /:id/status is Admin/Support only.
- * @param {number|null} [props.pendingId] Quotation currently being updated.
- * @param {(id: number, status: string) => void} [props.onStatusChange]
+ * @param {boolean} [props.canEdit] Shows the edit action on Pending rows.
  */
 export function QuotationsTable({
   quotations,
   sort,
   onToggleSort,
   isLoading = false,
-  canSetStatus = false,
-  pendingId = null,
-  onStatusChange,
+  canEdit = false,
 }) {
   const showSkeleton = isLoading && quotations.length === 0
 
@@ -152,7 +159,9 @@ export function QuotationsTable({
           className="w-full min-w-3xl table-fixed border-collapse"
           aria-busy={isLoading || undefined}
         >
-          <caption className="sr-only">Quotations, sortable by column.</caption>
+          <caption className="sr-only">
+            Quotations, sortable by column. Select a row to open it.
+          </caption>
 
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-line bg-sunken">
@@ -172,11 +181,7 @@ export function QuotationsTable({
                     aria-sort={
                       isSortable ? (isActive ? ARIA_SORT[sort.dir] : 'none') : undefined
                     }
-                    className={cn(
-                      'px-4 py-2.5 text-left',
-                      column.width,
-                      column.responsive,
-                    )}
+                    className={cn('px-4 py-2.5 text-left', column.width)}
                   >
                     {isSortable ? (
                       <button
@@ -196,6 +201,10 @@ export function QuotationsTable({
                   </th>
                 )
               })}
+
+              <th scope="col" className="w-24 px-4 py-2.5 text-right">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
 
@@ -206,15 +215,13 @@ export function QuotationsTable({
             )}
           >
             {showSkeleton ? (
-              <SkeletonRows />
+              <SkeletonRows columnCount={COLUMNS.length + 1} />
             ) : (
               quotations.map((quotation) => (
                 <QuotationRow
                   key={quotation.quotationId}
                   quotation={quotation}
-                  canSetStatus={canSetStatus}
-                  pendingId={pendingId}
-                  onStatusChange={onStatusChange}
+                  canEdit={canEdit}
                 />
               ))
             )}
