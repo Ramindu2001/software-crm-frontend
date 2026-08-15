@@ -65,8 +65,16 @@ ones.
 ## Talking to the backend
 
 The API is the Express + MySQL service in `../software-crm-backend`, on
-`http://localhost:3000/api`. Start it with `npm run dev`, then `npm run seed`
-for the three roles, one user per role, and a sample catalogue.
+`http://localhost:3000/api`:
+
+```
+npm run migrate   # access-control tables + permission grants (idempotent)
+npm run seed      # three roles, one user per role, sample catalogue
+npm run dev
+```
+
+`migrate` must run before the app will authenticate — `authenticate()` reads
+`users.is_active` and the `role_permissions` table, both of which it creates.
 
 `lib/apiClient.js` wraps `fetch`. It never imports a feature: the auth token
 and the 401 handler are registered from `AuthProvider` via
@@ -148,22 +156,61 @@ Worth knowing before building against it:
   everything — they exist to fill pickers. Their `api/` modules page the result
   client-side so the hooks cannot tell the difference.
 
-### Role guards
+### Permissions
 
-Writes are role-gated server-side and mirrored in
-`features/auth/permissions.js`. Read `can()` off `useAuth()` and hide actions
-the caller cannot perform, rather than letting them 403:
+Authorisation is **server-driven**, not a table baked into the bundle. An admin
+can change what each role may do at runtime, so the frontend must gate on the
+rules in force now rather than the ones that were true at build time.
 
-| Permission | Roles |
-| --- | --- |
-| `customers:write` | Admin, Support |
-| `issues:create` | Admin, Support |
-| `quotations:create`, `quotations:setStatus` | Admin, Support |
-| `products:write` | Admin |
+`POST /api/auth/login` and `GET /api/auth/me` both return the caller's
+effective grant list. `features/auth/permissions.js` reads it:
 
-Reads are open to any authenticated user, so they have no entry. The server
-re-checks every one of these — the table exists to avoid dead ends, not to
-enforce anything.
+```js
+const { can } = useAuth()
+if (can(PERMISSIONS.PRODUCTS_WRITE)) { /* render the control */ }
+```
+
+`can()` fails closed on every uncertain input — no user, no permission array,
+or an unknown key — so a typo hides a control rather than showing one that
+403s. `canAll` and `canAny` cover routes and navigation.
+
+Gating happens at three depths, and only the last one is access control:
+
+| Layer | What it does | Where |
+| --- | --- | --- |
+| Navigation | Hides links to unreachable sections | `config/navigation.js`, filtered in `Sidebar` |
+| Route | Blocks direct URL entry with an explanation | `RequirePermission` in `app/router/guards.jsx` |
+| API | Actually enforces it | `requirePermission()` on every backend route |
+
+The first two exist so nobody meets a dead end. They are presentation. A URL
+typed by hand still reaches the route, and the server still says no.
+
+The catalogue lives in the backend's `utils/permissions.js` and is mirrored as
+`PERMISSIONS` in `features/auth/permissions.js`. Adding one means changing
+both, guarding a route with it, and running `npm run migrate`.
+
+**Live sessions see permission changes on the next `/me`** — that is, on
+reload. A revoked permission takes effect on the API immediately, so the worst
+case is a button that renders until refresh and then 403s if pressed, not
+access that outlives the revoke.
+
+### Access control lives in `features/users`
+
+Team members and role permissions are one feature, not two: a role is only
+meaningful through the users holding it, the matrix shows per-role user counts,
+and both sit behind the same administration surface. Splitting them would mean
+two features importing each other's internals, which rule 2 forbids.
+
+`features/settings` is a shell — it owns the page title and the routed tab bar,
+and `app/router` composes the sections into it.
+
+Three safety rules are enforced by the API and mirrored in the UI so nobody
+discovers them via a 409:
+
+- the **Admin role is locked** and always holds every permission — `roles:manage`
+  is itself a permission, so it must not be removable
+- you cannot **deactivate your own account**
+- you cannot **deactivate or demote the last active Admin**
 
 ## Imports
 

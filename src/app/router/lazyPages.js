@@ -30,8 +30,20 @@ export const ReportsPage = lazy(() =>
   import('@/features/reports').then((m) => ({ default: m.ReportsPage })),
 )
 
-export const SettingsPage = lazy(() =>
-  import('@/features/settings').then((m) => ({ default: m.SettingsPage })),
+export const SettingsLayout = lazy(() =>
+  import('@/features/settings').then((m) => ({ default: m.SettingsLayout })),
+)
+
+export const ProfileSettingsPage = lazy(() =>
+  import('@/features/settings').then((m) => ({ default: m.ProfileSettingsPage })),
+)
+
+export const UsersPage = lazy(() =>
+  import('@/features/users').then((m) => ({ default: m.UsersPage })),
+)
+
+export const RolesPage = lazy(() =>
+  import('@/features/users').then((m) => ({ default: m.RolesPage })),
 )
 
 export const QuotationsPage = lazy(() =>

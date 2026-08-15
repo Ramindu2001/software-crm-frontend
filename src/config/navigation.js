@@ -12,15 +12,22 @@ import {
  * Sidebar navigation.
  *
  * Kept as data so adding a section is a one-line change rather than an edit
- * inside JSX. `badge` is static placeholder wiring for now — it will be fed
- * by real counts once the issues feature has a data layer.
+ * inside JSX.
+ *
+ * `permission` gates the item against the signed-in user's grants, so nobody
+ * is shown a link to a page that would only tell them off. It is presentation
+ * only — the route behind each link guards itself with RequirePermission, and
+ * the API re-checks after that. Hiding a link is not access control.
+ *
+ * Items with no `permission` are always visible: Settings, because everyone
+ * has a profile, and Reports, which has no API behind it yet.
  */
 export const NAV_ITEMS = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/issues', label: 'Issues', icon: CircleDot, badge: 12 },
-  { to: '/customers', label: 'Customers', icon: Users },
-  { to: '/quotations', label: 'Quotations', icon: FileText },
-  { to: '/products', label: 'Products', icon: Package },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard:view' },
+  { to: '/issues', label: 'Issues', icon: CircleDot, permission: 'issues:view' },
+  { to: '/customers', label: 'Customers', icon: Users, permission: 'customers:view' },
+  { to: '/quotations', label: 'Quotations', icon: FileText, permission: 'quotations:view' },
+  { to: '/products', label: 'Products', icon: Package, permission: 'products:view' },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]

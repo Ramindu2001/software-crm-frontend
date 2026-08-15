@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { configureApiClient } from '@/lib/apiClient'
 import { toast } from '@/lib/toastStore'
 import { AuthContext } from './AuthContext'
-import { can as checkPermission } from './permissions'
+import {
+  can as checkPermission,
+  canAll as checkAllPermissions,
+  canAny as checkAnyPermission,
+} from './permissions'
 import {
   getCurrentUser,
   getSessionToken,
@@ -95,11 +99,15 @@ export function AuthProvider({ children }) {
       login,
       logout,
       /**
-       * Whether the signed-in user may perform an action the API role-guards.
+       * Whether the signed-in user may perform a permission-guarded action.
        * Bound to the current user here so call sites read as
-       * `can('products:write')` rather than threading the user through.
+       * `can(PERMISSIONS.PRODUCTS_WRITE)` rather than threading the user
+       * through. Backed by the grant list the API returned, so it reflects
+       * whatever an admin last configured.
        */
       can: (permission) => checkPermission(state.user, permission),
+      canAll: (permissions) => checkAllPermissions(state.user, permissions),
+      canAny: (permissions) => checkAnyPermission(state.user, permissions),
     }),
     [state, login, logout],
   )

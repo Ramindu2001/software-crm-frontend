@@ -1,13 +1,21 @@
 /**
- * Mirrors the role guards the API enforces.
+ * Permission checks for the UI.
  *
- * The server is the authority — every one of these is re-checked in
- * `middleware/role.middleware.js`, and a request that slips past this table
- * still comes back 403. This exists so the UI does not offer an action the
- * caller cannot perform: a Developer shown a "New issue" button gets a dead
- * end, which reads as a broken app rather than as a permission boundary.
+ * These used to be a static table mirroring hardcoded `authorize(ROLES…)`
+ * guards. They are not any more: an admin can now change what each role may
+ * do at runtime, so a table baked into the bundle would gate the UI on rules
+ * that were true when the app was built rather than the ones in force now.
  *
- * When a guard changes on the backend, change it here too.
+ * The source of truth is `user.permissions` — the effective grant list the API
+ * returns from POST /api/auth/login and GET /api/auth/me. The server re-reads
+ * it on every authenticated request, so a revoked permission is gone from the
+ * next `/me` rather than lingering until the token expires.
+ *
+ * The server is still the authority. Every key below is re-checked by
+ * `requirePermission()` on the matching route, and a request that slips past a
+ * check here still comes back 403. What this buys is that the UI does not
+ * offer an action the caller cannot perform — a button that 403s reads as a
+ * broken app, not as a permission boundary.
  */
 
 export const ROLES = {
@@ -16,47 +24,77 @@ export const ROLES = {
   DEVELOPER: 'Developer',
 }
 
-const { ADMIN, SUPPORT, DEVELOPER } = ROLES
+export const ROLE_VALUES = Object.values(ROLES)
 
 /**
- * Permission -> roles allowed to exercise it.
+ * Every permission key the UI checks, mirroring the backend catalogue in
+ * `utils/permissions.js`.
  *
- * Reads are absent on purpose: every list and detail endpoint is open to any
- * authenticated user, so gating them here would only add a lookup that always
- * says yes.
+ * Kept as a named map so call sites read as `PERMISSIONS.ISSUES_CREATE` and a
+ * typo is a build-time undefined rather than a silently-false check. Adding
+ * one here does nothing on its own — a permission only exists once the
+ * backend catalogue and a route guard both know about it.
  */
-const PERMISSIONS = {
-  // POST /api/customers, PUT /api/customers/:id — Admin, Support. Developers
-  // see the customer on every ticket but do not own the record.
-  'customers:write': [ADMIN, SUPPORT],
+export const PERMISSIONS = {
+  DASHBOARD_VIEW: 'dashboard:view',
 
-  // POST /api/issues — Admin, Support. Developers work the queue rather than
-  // filling it, but any authenticated user may move an issue's status, so
-  // there is no permission for that.
-  'issues:create': [ADMIN, SUPPORT],
+  ISSUES_VIEW: 'issues:view',
+  ISSUES_CREATE: 'issues:create',
+  ISSUES_SET_STATUS: 'issues:setStatus',
 
-  // POST /api/quotations, PATCH /api/quotations/:id/status — Admin, Support.
-  // Quotations are a commercial document; Developers read but do not price.
-  'quotations:create': [ADMIN, SUPPORT],
-  'quotations:setStatus': [ADMIN, SUPPORT],
+  CUSTOMERS_VIEW: 'customers:view',
+  CUSTOMERS_WRITE: 'customers:write',
 
-  // POST/PUT /api/products, PATCH /api/products/:id/status — Admin only.
-  // The catalogue is configuration: it defines what the company sells and
-  // what every quotation is priced against.
-  'products:write': [ADMIN],
+  PRODUCTS_VIEW: 'products:view',
+  PRODUCTS_WRITE: 'products:write',
+
+  QUOTATIONS_VIEW: 'quotations:view',
+  QUOTATIONS_CREATE: 'quotations:create',
+  QUOTATIONS_SET_STATUS: 'quotations:setStatus',
+
+  USERS_VIEW: 'users:view',
+  USERS_MANAGE: 'users:manage',
+  ROLES_MANAGE: 'roles:manage',
 }
 
-/** Every role, for the rare caller that needs to enumerate them. */
-export const ROLE_VALUES = [ADMIN, SUPPORT, DEVELOPER]
+const KNOWN_KEYS = new Set(Object.values(PERMISSIONS))
 
 /**
- * @param {{role?: string}|null} user
- * @param {keyof PERMISSIONS} permission
- * @returns {boolean} False for an unknown permission — failing closed means a
- *   typo hides a button, rather than showing one that 403s.
+ * Whether the signed-in user holds a permission.
+ *
+ * Fails closed on every uncertain input — no user, no permission list, or a
+ * key the UI does not know about. A typo therefore hides a control rather
+ * than showing one that 403s, which is the cheaper failure of the two.
+ *
+ * @param {{permissions?: string[]}|null} user
+ * @param {string} permission A value from PERMISSIONS.
+ * @returns {boolean}
  */
 export function can(user, permission) {
-  const allowed = PERMISSIONS[permission]
-  if (!allowed) return false
-  return Boolean(user?.role) && allowed.includes(user.role)
+  if (!user || !Array.isArray(user.permissions)) return false
+  if (!KNOWN_KEYS.has(permission)) return false
+  return user.permissions.includes(permission)
+}
+
+/**
+ * Whether the user holds every permission listed.
+ * Used by route guards that protect a screen needing more than one.
+ *
+ * @param {{permissions?: string[]}|null} user
+ * @param {string[]} permissions
+ */
+export function canAll(user, permissions = []) {
+  return permissions.every((permission) => can(user, permission))
+}
+
+/**
+ * Whether the user holds at least one of the permissions listed.
+ * Used for navigation, where a section is worth showing if any of its screens
+ * is reachable.
+ *
+ * @param {{permissions?: string[]}|null} user
+ * @param {string[]} permissions
+ */
+export function canAny(user, permissions = []) {
+  return permissions.some((permission) => can(user, permission))
 }

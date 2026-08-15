@@ -1,9 +1,10 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { ChevronsLeft, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { APP_NAME } from '@/config/constants'
 import { NAV_ITEMS } from '@/config/navigation'
 import { Button } from '@/components/ui'
+import { useAuth } from '@/features/auth'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { SidebarNavItem } from './SidebarNavItem'
 
@@ -29,9 +30,17 @@ export function Sidebar({
   onCloseMobile,
 }) {
   const asideRef = useRef(null)
+  const { can } = useAuth()
 
   // Only traps while the drawer is genuinely open on a small viewport.
   useFocusTrap(asideRef, isMobileOpen)
+
+  // Hide sections the user cannot open. Presentation only — every route
+  // guards itself, and the API re-checks after that.
+  const navItems = useMemo(
+    () => NAV_ITEMS.filter((item) => !item.permission || can(item.permission)),
+    [can],
+  )
 
   return (
     <>
@@ -87,7 +96,7 @@ export function Sidebar({
           aria-label="Main navigation"
           className="flex-1 space-y-1 overflow-y-auto px-3 py-2"
         >
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <SidebarNavItem
               key={item.to}
               item={item}

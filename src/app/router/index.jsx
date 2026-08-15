@@ -1,15 +1,18 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
-import { LoginPage } from '@/features/auth'
+import { LoginPage, PERMISSIONS } from '@/features/auth'
 import { NotFoundPage } from './NotFoundPage'
-import { RequireAuth, RequireGuest } from './guards'
+import { RequireAuth, RequireGuest, RequirePermission } from './guards'
 import {
   CustomersPage,
   DashboardPage,
   IssueDetailPage,
   IssuesPage,
   ReportsPage,
-  SettingsPage,
+  SettingsLayout,
+  ProfileSettingsPage,
+  UsersPage,
+  RolesPage,
   QuotationsPage,
   ProductsPage,
   ProductDetailPage,
@@ -104,9 +107,34 @@ export const router = createBrowserRouter([
         handle: { title: 'Quotations' },
       },
       {
+        // Settings is a shell with routed sub-sections, so each one is
+        // linkable and survives a refresh. The permission guards sit on the
+        // children rather than the layout: Profile is for everyone, and only
+        // the administration sections are restricted.
         path: 'settings',
-        element: <SettingsPage />,
+        element: <SettingsLayout />,
         handle: { title: 'Settings' },
+        children: [
+          { index: true, element: <ProfileSettingsPage /> },
+          {
+            path: 'users',
+            element: (
+              <RequirePermission permissions={[PERMISSIONS.USERS_VIEW]}>
+                <UsersPage />
+              </RequirePermission>
+            ),
+            handle: { title: 'Team members' },
+          },
+          {
+            path: 'roles',
+            element: (
+              <RequirePermission permissions={[PERMISSIONS.ROLES_MANAGE]}>
+                <RolesPage />
+              </RequirePermission>
+            ),
+            handle: { title: 'Roles & permissions' },
+          },
+        ],
       },
       // Unmatched paths keep the shell so navigation stays available.
       {

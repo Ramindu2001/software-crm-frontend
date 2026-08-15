@@ -38,9 +38,18 @@ function mapUser(raw) {
     id: raw.id,
     name: raw.name,
     email: raw.email,
-    // 'Admin' | 'Support' | 'Developer'. Drives the permission checks in
-    // ../permissions.js, so it must survive verbatim.
+    // 'Admin' | 'Support' | 'Developer'. Shown in the UI; the role name is
+    // NOT what authorisation is decided on — `permissions` is.
     role: raw.role ?? null,
+    /**
+     * The effective grant list for this user's role, which every `can()`
+     * check reads. Defaulted to an empty array rather than left undefined so
+     * a malformed response fails closed: no permissions means no controls,
+     * not every control.
+     */
+    permissions: Array.isArray(raw.permissions) ? raw.permissions : [],
+    /** True after an admin set or reset the password. */
+    mustChangePassword: Boolean(raw.must_change_password),
     initials: raw.initials ?? deriveInitials(raw.name),
   }
 }

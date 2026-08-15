@@ -30,6 +30,55 @@ export class AuthError extends Error {
 
 // Seeded accounts. Passwords live here only because this is a mock — a real
 // backend never sends them to the client.
+/**
+ * Grant lists matching what `npm run migrate` seeds for each role, so a
+ * permission check behaves identically in mock and HTTP mode.
+ *
+ * Against the real API these are configurable per role at runtime; here they
+ * are fixed, because there is no server to configure. The mock users feature
+ * has its own editable copy — see features/users/api/mockAccess.js.
+ */
+const ADMIN_PERMISSIONS = [
+  'dashboard:view',
+  'issues:view',
+  'issues:create',
+  'issues:setStatus',
+  'customers:view',
+  'customers:write',
+  'products:view',
+  'products:write',
+  'quotations:view',
+  'quotations:create',
+  'quotations:setStatus',
+  'users:view',
+  'users:manage',
+  'roles:manage',
+]
+
+const SUPPORT_PERMISSIONS = [
+  'dashboard:view',
+  'issues:view',
+  'issues:create',
+  'issues:setStatus',
+  'customers:view',
+  'customers:write',
+  'products:view',
+  'quotations:view',
+  'quotations:create',
+  'quotations:setStatus',
+  'users:view',
+]
+
+const DEVELOPER_PERMISSIONS = [
+  'dashboard:view',
+  'issues:view',
+  'issues:setStatus',
+  'customers:view',
+  'products:view',
+  'quotations:view',
+  'users:view',
+]
+
 const USERS = [
   {
     id: 1,
@@ -38,6 +87,7 @@ const USERS = [
     password: 'password123',
     role: 'Admin',
     initials: 'AU',
+    permissions: ADMIN_PERMISSIONS,
   },
   {
     id: 2,
@@ -46,6 +96,7 @@ const USERS = [
     password: 'password123',
     role: 'Support',
     initials: 'SU',
+    permissions: SUPPORT_PERMISSIONS,
   },
   {
     id: 3,
@@ -54,6 +105,7 @@ const USERS = [
     password: 'password123',
     role: 'Developer',
     initials: 'DU',
+    permissions: DEVELOPER_PERMISSIONS,
   },
 ]
 
@@ -79,6 +131,10 @@ function toPublicUser(user) {
     name: user.name,
     email: user.email,
     role: user.role,
+    // Copied rather than referenced, so nothing downstream can mutate the
+    // seed array and change what a later login returns.
+    permissions: [...user.permissions],
+    mustChangePassword: false,
     initials: user.initials,
   }
 }

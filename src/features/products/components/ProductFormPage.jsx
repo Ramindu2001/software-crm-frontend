@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { Trash2, Plus, ArrowLeft } from 'lucide-react'
+import { Link, useParams, useNavigate } from 'react-router-dom'
+import { Trash2, Plus, ArrowLeft, ShieldAlert } from 'lucide-react'
 import { PageHeader } from '@/components/common/PageHeader'
 import { FullPageLoader } from '@/components/common/FullPageLoader'
 import { RouteFallback } from '@/components/common/RouteFallback'
-import { ApiErrorAlert } from '@/components/common'
+import { ApiErrorAlert, EmptyState } from '@/components/common'
 import { Button, Input, Select, Textarea, Card, CardHeader, CardTitle, CardContent } from '@/components/ui'
 import { useAuth } from '@/features/auth'
 import { useProduct, useCreateProduct, useUpdateProduct } from '../hooks'
@@ -59,10 +59,18 @@ export function ProductFormPage() {
   }, [isEditMode, product])
 
   if (!canWrite) {
+    // EmptyState, not RouteFallback: RouteFallback is the Suspense spinner and
+    // ignores props, so it would render "Loading…" forever here.
     return (
-      <RouteFallback
+      <EmptyState
+        icon={ShieldAlert}
         title="Not permitted"
-        description="Only an Admin can add or edit products in the catalogue."
+        description="You need the manage product catalogue permission to add or edit products."
+        action={
+          <Button as={Link} to="/products" size="sm">
+            Back to products
+          </Button>
+        }
       />
     )
   }

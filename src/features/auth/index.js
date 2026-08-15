@@ -11,6 +11,11 @@ export { AuthProvider } from './AuthProvider'
 export { useAuth } from './AuthContext'
 export { LoginPage } from './components/LoginPage'
 
-// The role vocabulary and the permission table, for anything that needs to
-// reason about roles beyond `can()` — e.g. rendering the current user's role.
-export { ROLES, ROLE_VALUES, can } from './permissions'
+/**
+ * The permission keys and the raw checks.
+ *
+ * Prefer `can()` off `useAuth()` in components — it is already bound to the
+ * signed-in user. These exports are for the cases that are not a component:
+ * route guards, and anything reasoning about roles rather than permissions.
+ */
+export { ROLES, ROLE_VALUES, PERMISSIONS, can, canAll, canAny } from './permissions'
