@@ -124,14 +124,26 @@ There is no `Critical` priority and no `Closed` status. Adding either needs an
 
 Worth knowing before building against it:
 
-- **No customer writes.** `GET /api/customers` is the entire surface — no POST,
-  no PATCH, no `GET /:id`. Records go in through the database directly.
+- **No `GET /api/customers/:id`.** The list carries every column, `address`
+  included, and POST/PUT both return the full row — so nothing needs to fetch
+  one customer on its own. `getCustomer` narrows the list.
 - **No quotation detail.** There is no `GET /api/quotations/:id`, so line items
   cannot be read back; the list carries `items_count` and the totals.
 - **No `updated_at` on tickets.** Only `created_at`, so "recently updated"
   ordering does not exist.
-- **No product DELETE.** Products are referenced with `ON DELETE RESTRICT`;
-  `PATCH /:id/status` is the soft delete.
+- **No DELETE anywhere.** Products, customers and the rest are referenced with
+  `ON DELETE RESTRICT`, so anything with history cannot be removed. Products
+  have `PATCH /:id/status` as a soft delete; customers have no equivalent,
+  because the table has no status column.
+- **`PUT` is a full replacement**, on both `/customers/:id` and
+  `/products/:id`. An omitted optional field is set to NULL, not left alone —
+  which is what an edit form wants, but makes a partial body destructive. Send
+  the whole record.
+- **Customer email is unique**, enforced in the controller rather than by an
+  index, so a clash is a 409 whose message names the customer already holding
+  it. `createCustomer`/`updateCustomer` translate that to a
+  `DuplicateEmailError` carrying `field: 'email'`, which the form binds to the
+  input.
 - **Unpaginated master data.** `/customers`, `/products` and `/users` return
   everything — they exist to fill pickers. Their `api/` modules page the result
   client-side so the hooks cannot tell the difference.
@@ -144,6 +156,7 @@ the caller cannot perform, rather than letting them 403:
 
 | Permission | Roles |
 | --- | --- |
+| `customers:write` | Admin, Support |
 | `issues:create` | Admin, Support |
 | `quotations:create`, `quotations:setStatus` | Admin, Support |
 | `products:write` | Admin |

@@ -26,6 +26,10 @@ const { ADMIN, SUPPORT, DEVELOPER } = ROLES
  * says yes.
  */
 const PERMISSIONS = {
+  // POST /api/customers, PUT /api/customers/:id — Admin, Support. Developers
+  // see the customer on every ticket but do not own the record.
+  'customers:write': [ADMIN, SUPPORT],
+
   // POST /api/issues — Admin, Support. Developers work the queue rather than
   // filling it, but any authenticated user may move an issue's status, so
   // there is no permission for that.

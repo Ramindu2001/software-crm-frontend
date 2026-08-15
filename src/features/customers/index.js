@@ -12,3 +12,9 @@ export { CustomersPage } from './components/CustomersPage'
 // Exported for cross-feature reuse (e.g. a customers widget on the dashboard).
 export { useCustomers } from './hooks/useCustomers'
 export { useCustomer } from './hooks/useCustomer'
+
+/**
+ * Exported so another feature can offer "add a customer" inline — the issue
+ * and quotation forms both stall on a customer that does not exist yet.
+ */
+export { CustomerFormModal } from './components/CustomerFormModal'

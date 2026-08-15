@@ -1,23 +1,31 @@
-import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronsUpDown, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui'
 
 /**
- * Columns are exactly the fields GET /api/customers returns. The endpoint is
- * lean on purpose — it exists to fill pickers — so there is no status,
- * industry or issue count to show, and none of those exist in the schema
- * either.
+ * Columns are exactly the fields GET /api/customers returns. `address` is part
+ * of the list payload precisely so a table can show it without a request per
+ * row — but it is returned, not searched, so a query never matches on it.
+ *
+ * `sortable: false` marks columns outside the API's sort allowlist; asking for
+ * them would come back 400, so those headers render as plain labels.
  */
 const COLUMNS = [
   { key: 'name', label: 'Company' },
-  { key: 'contactPerson', label: 'Contact', width: 'w-52' },
-  { key: 'email', label: 'Email', width: 'w-64', responsive: 'hidden md:table-cell' },
+  { key: 'contactPerson', label: 'Contact', width: 'w-48' },
+  { key: 'email', label: 'Email', width: 'w-60', responsive: 'hidden md:table-cell' },
   {
     key: 'phone',
     label: 'Phone',
     width: 'w-40',
     responsive: 'hidden lg:table-cell',
-    // Not in the API's sort allowlist; sending it would be a 400.
+    sortable: false,
+  },
+  {
+    key: 'address',
+    label: 'Address',
+    width: 'w-64',
+    responsive: 'hidden xl:table-cell',
     sortable: false,
   },
 ]
@@ -38,11 +46,11 @@ function SortIcon({ isActive, direction }) {
   return <Icon className="size-3.5 text-brand-600" aria-hidden="true" />
 }
 
-function SkeletonRows({ rows = 6 }) {
+function SkeletonRows({ rows = 6, columnCount }) {
   return Array.from({ length: rows }, (_, index) => (
     <tr key={index} className="animate-pulse">
-      {COLUMNS.map((column) => (
-        <td key={column.key} className={cn('px-4 py-3.5', column.responsive)}>
+      {Array.from({ length: columnCount }, (_, cell) => (
+        <td key={cell} className="px-4 py-3.5">
           <div className="h-3 rounded bg-line" />
         </td>
       ))}
@@ -50,7 +58,7 @@ function SkeletonRows({ rows = 6 }) {
   ))
 }
 
-function CustomerRow({ customer }) {
+function CustomerRow({ customer, canEdit, onEdit }) {
   return (
     <tr className="transition-colors hover:bg-sunken">
       <td className="px-4 py-3">
@@ -83,6 +91,27 @@ function CustomerRow({ customer }) {
           {customer.phone || '—'}
         </span>
       </td>
+
+      <td className="hidden px-4 py-3 xl:table-cell">
+        {/* Optional column — plenty of customers have no address on file. */}
+        <span className="block truncate text-sm text-ink-muted" title={customer.address}>
+          {customer.address || '—'}
+        </span>
+      </td>
+
+      {canEdit && (
+        <td className="px-4 py-3 text-right">
+          <button
+            type="button"
+            onClick={() => onEdit(customer)}
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-ink-muted transition-colors hover:bg-surface hover:text-brand-700"
+          >
+            <Pencil className="size-3.5" aria-hidden="true" />
+            {/* The company name keeps the accessible name unique across rows. */}
+            Edit<span className="sr-only"> {customer.name}</span>
+          </button>
+        </td>
+      )}
     </tr>
   )
 }
@@ -95,9 +124,20 @@ function CustomerRow({ customer }) {
  * @param {{by: string, dir: 'asc'|'desc'}} props.sort
  * @param {(field: string) => void} props.onToggleSort
  * @param {boolean} [props.isLoading]
+ * @param {boolean} [props.canEdit] Renders the edit action. PUT is
+ *   Admin/Support only.
+ * @param {(customer: object) => void} [props.onEdit]
  */
-export function CustomersTable({ customers, sort, onToggleSort, isLoading = false }) {
+export function CustomersTable({
+  customers,
+  sort,
+  onToggleSort,
+  isLoading = false,
+  canEdit = false,
+  onEdit,
+}) {
   const showSkeleton = isLoading && customers.length === 0
+  const columnCount = COLUMNS.length + (canEdit ? 1 : 0)
 
   return (
     <Card className="overflow-hidden">
@@ -149,6 +189,12 @@ export function CustomersTable({ customers, sort, onToggleSort, isLoading = fals
                   </th>
                 )
               })}
+
+              {canEdit && (
+                <th scope="col" className="w-24 px-4 py-2.5 text-right">
+                  <span className="sr-only">Actions</span>
+                </th>
+              )}
             </tr>
           </thead>
 
@@ -159,10 +205,15 @@ export function CustomersTable({ customers, sort, onToggleSort, isLoading = fals
             )}
           >
             {showSkeleton ? (
-              <SkeletonRows />
+              <SkeletonRows columnCount={columnCount} />
             ) : (
               customers.map((customer) => (
-                <CustomerRow key={customer.id} customer={customer} />
+                <CustomerRow
+                  key={customer.id}
+                  customer={customer}
+                  canEdit={canEdit}
+                  onEdit={onEdit}
+                />
               ))
             )}
           </tbody>

@@ -1,19 +1,21 @@
+import { useState } from 'react'
 import { Search, SearchX, TriangleAlert, Users, X } from 'lucide-react'
 import { EmptyState, PageHeader } from '@/components/common'
 import { Button, Input, Pagination } from '@/components/ui'
+import { useAuth } from '@/features/auth'
+import { toast } from '@/lib/toastStore'
 import { useCustomers } from '../hooks/useCustomers'
 import { CustomersTable } from './CustomersTable'
+import { CustomerFormModal } from './CustomerFormModal'
 
 /**
  * Customer directory.
  *
- * Read-only: the API exposes GET /api/customers and no write endpoint, so
- * there is no "Add customer" action here. Offering one would be a button that
- * could only ever fail. New records are inserted directly into the database
- * until the backend grows a POST.
- *
- * There is no status filter either — `customers` has no status column, and the
- * only notion of "active" anywhere in the schema is on subscriptions.
+ * There is no status filter: `customers` has no status column, and the only
+ * notion of "active" anywhere in the schema is on subscriptions. Search covers
+ * company, contact and email — not address, which the API returns but
+ * deliberately does not search, since free text would match half the list on a
+ * city name.
  */
 export function CustomersPage() {
   const {
@@ -34,6 +36,26 @@ export function CustomersPage() {
     setPage,
   } = useCustomers()
 
+  // POST and PUT are Admin/Support — Developers see customers on their tickets
+  // but do not own the record.
+  const { can } = useAuth()
+  const canWrite = can('customers:write')
+
+  // null = closed. { customer: undefined } opens create; a record opens edit.
+  const [formState, setFormState] = useState(null)
+
+  const handleSaved = (customer, mode) => {
+    setFormState(null)
+    // Refetch so the row lands in the right place under the current search and
+    // sort, rather than being spliced in where it may not belong.
+    refresh()
+    toast.success(mode === 'edit' ? 'Customer updated' : 'Customer added', {
+      // Naming it matters: an active search may exclude the row, so the toast
+      // is sometimes the only confirmation the user gets.
+      description: customer.name,
+    })
+  }
+
   const isEmpty = !isLoading && customers.length === 0
 
   // Compute the visible row range for the filter summary.
@@ -42,7 +64,16 @@ export function CustomersPage() {
 
   return (
     <>
-      <PageHeader description="Companies and contacts your team supports." />
+      <PageHeader
+        description="Companies and contacts your team supports."
+        actions={
+          canWrite && (
+            <Button size="sm" onClick={() => setFormState({ customer: undefined })}>
+              Add customer
+            </Button>
+          )
+        }
+      />
 
       {/* Filter bar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
@@ -99,7 +130,14 @@ export function CustomersPage() {
           <EmptyState
             icon={Users}
             title="No customers yet"
-            description="Customer records are managed directly in the database. Once they exist, they will appear here and in the issue and quotation forms."
+            description="Add a customer and they become available on the issue and quotation forms."
+            action={
+              canWrite && (
+                <Button size="sm" onClick={() => setFormState({ customer: undefined })}>
+                  Add the first customer
+                </Button>
+              )
+            }
           />
         )
       ) : (
@@ -109,6 +147,8 @@ export function CustomersPage() {
             sort={sort}
             onToggleSort={toggleSort}
             isLoading={isLoading}
+            canEdit={canWrite}
+            onEdit={(customer) => setFormState({ customer })}
           />
 
           <Pagination
@@ -118,6 +158,16 @@ export function CustomersPage() {
             className="mt-4"
           />
         </>
+      )}
+
+      {/* Mounted only while open, so each open starts from the record as it
+          currently stands rather than a stale draft. */}
+      {formState && (
+        <CustomerFormModal
+          customer={formState.customer}
+          onClose={() => setFormState(null)}
+          onSaved={handleSaved}
+        />
       )}
     </>
   )
