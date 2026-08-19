@@ -63,7 +63,23 @@ export function Sidebar({
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-surface ring-1 ring-line',
           'transition-[transform,width] duration-200 ease-out',
-          'lg:static lg:translate-x-0',
+          // Desktop: back in flow so it reserves its own column, but pinned to
+          // the top of the viewport so the rail stays put while the page
+          // scrolls. Sticky rather than fixed keeps the layout honest — a fixed
+          // rail is out of flow and the content column would have to be pushed
+          // clear of it by a hand-maintained margin that silently breaks the
+          // moment the collapsed width changes.
+          //
+          // `h-screen` is what makes it stick: the flex parent stretches items
+          // to full container height by default, and an item as tall as its own
+          // scroll range has nothing left to travel. `bottom-auto` undoes the
+          // mobile `inset-y-0`, leaving `top-0` as the only sticky constraint.
+          //
+          // z-index drops to the topbar's level here. `static` made the mobile
+          // drawer's z-50 inert on desktop; positioning the rail activates it,
+          // which would leave it tied with the z-50 modal overlay and settled
+          // only by portal order. Chrome sits at 30, overlays own 50 upward.
+          'lg:sticky lg:top-0 lg:bottom-auto lg:z-30 lg:h-screen lg:translate-x-0',
           isMobileOpen ? 'translate-x-0' : '-translate-x-full',
           isCollapsed ? 'lg:w-[4.5rem]' : 'lg:w-64',
         )}

@@ -52,18 +52,3 @@ export const PLAN_OPTIONS = Object.values(PLAN).map(({ value, label }) => ({
   value,
   label,
 }))
-
-/** Sri Lankan rupees, matching the printed template. */
-export const CURRENCY = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-
-/** "Rs. 60,000.00" — the exact form used on the paper template. */
-export const formatRupees = (amount) =>
-  `Rs. ${Number(amount ?? 0).toLocaleString('en-LK', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`

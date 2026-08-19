@@ -9,13 +9,8 @@ import {
   CardTitle,
 } from '@/components/ui'
 import { IssueStatusBadge } from '@/features/issues'
+import { formatRupees } from '@/lib/format'
 import { useDashboardStats } from '../hooks/useDashboardStats'
-
-const CURRENCY_FORMATTER = new Intl.NumberFormat('en-LK', {
-  style: 'currency',
-  currency: 'LKR',
-  maximumFractionDigits: 0,
-})
 
 export function DashboardPage() {
   const { stats, recentIssues, isLoading, error, refresh } = useDashboardStats()
@@ -67,7 +62,9 @@ export function DashboardPage() {
     },
     {
       label: 'Monthly revenue',
-      value: CURRENCY_FORMATTER.format(stats?.monthlyRevenue ?? 0),
+      // Whole rupees: a KPI tile is read at a glance, and the cents on a
+      // month's takings are noise at that altitude.
+      value: formatRupees(stats?.monthlyRevenue ?? 0, { whole: true }),
       hint: 'Paid invoices raised this month',
       icon: Wallet,
     },

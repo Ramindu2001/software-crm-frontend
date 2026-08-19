@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import { Button, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Button, Input, MoneyInput, Modal, Select, Textarea } from '@/components/ui'
 import { createProduct } from '../api'
 
 const INITIAL_VALUES = {
@@ -124,10 +124,7 @@ export function CreateProductModal({ onClose, onCreated }) {
         />
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
+          <MoneyInput
             label="1st Year Annual Fee"
             value={values.annual_fee_1st_year}
             onChange={setValue('annual_fee_1st_year')}
@@ -135,10 +132,7 @@ export function CreateProductModal({ onClose, onCreated }) {
             placeholder="0.00"
           />
 
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
+          <MoneyInput
             label="2nd Year Annual Fee"
             value={values.annual_fee_2nd_year}
             onChange={setValue('annual_fee_2nd_year')}
@@ -146,10 +140,7 @@ export function CreateProductModal({ onClose, onCreated }) {
             placeholder="0.00"
           />
 
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
+          <MoneyInput
             label="Monthly Price"
             value={values.monthly_price}
             onChange={setValue('monthly_price')}

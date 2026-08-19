@@ -10,15 +10,17 @@ import {
   CardHeader,
   CardTitle,
   Input,
+  MoneyInput,
   Select,
   Textarea,
 } from '@/components/ui'
 import { PERMISSIONS, useAuth } from '@/features/auth'
 import { useCompanySettings } from '@/features/company'
+import { formatRupees } from '@/lib/format'
 import { toast } from '@/lib/toastStore'
 import { createQuotation, updateQuotation } from '../api'
 import { useQuotation, useQuotationBuilder } from '../hooks'
-import { formatRupees, isEditable, PLAN, PLAN_OPTIONS } from '../constants'
+import { isEditable, PLAN, PLAN_OPTIONS } from '../constants'
 
 /**
  * Build or edit a quotation.
@@ -295,11 +297,8 @@ export function QuotationFormPage() {
                         error={lineError.quantity}
                       />
 
-                      <Input
+                      <MoneyInput
                         label="Unit price"
-                        type="number"
-                        min="0"
-                        step="0.01"
                         value={line.unitPrice}
                         onChange={(event) =>
                           builder.updateLine(line.key, { unitPrice: event.target.value })

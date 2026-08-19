@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { FullPageLoader } from '@/components/common/FullPageLoader'
 import { RouteFallback } from '@/components/common/RouteFallback'
 import { ApiErrorAlert, EmptyState } from '@/components/common'
-import { Button, Input, Select, Textarea, Card, CardHeader, CardTitle, CardContent } from '@/components/ui'
+import { Button, Input, MoneyInput, Select, Textarea, Card, CardHeader, CardTitle, CardContent } from '@/components/ui'
 import { useAuth } from '@/features/auth'
 import { useProduct, useCreateProduct, useUpdateProduct } from '../hooks'
 import { PRODUCT_TYPE_OPTIONS } from '../constants'
@@ -391,30 +391,21 @@ export function ProductFormPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-ink mb-1">1st Year Price</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <MoneyInput
                         value={pkg.first_year_price}
                         onChange={(e) => handlePackageChange(pkg.uiId, 'first_year_price', e.target.value)}
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-ink mb-1">2nd Year Price</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <MoneyInput
                         value={pkg.second_year_price}
                         onChange={(e) => handlePackageChange(pkg.uiId, 'second_year_price', e.target.value)}
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-ink mb-1">Monthly Price</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <MoneyInput
                         value={pkg.monthly_price}
                         onChange={(e) => handlePackageChange(pkg.uiId, 'monthly_price', e.target.value)}
                       />

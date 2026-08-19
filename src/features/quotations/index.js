@@ -18,6 +18,5 @@ export { useQuotations, useQuotation } from './hooks'
 export {
   QUOTATION_STATUS,
   QUOTATION_STATUS_OPTIONS,
-  formatRupees,
   isEditable,
 } from './constants'

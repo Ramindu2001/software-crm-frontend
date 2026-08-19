@@ -1,10 +1,5 @@
 import { Badge } from '@/components/ui'
-
-const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 0,
-})
+import { formatRupees } from '@/lib/format'
 
 export function ProductsTable({ products }) {
   if (products.length === 0) {
@@ -42,10 +37,10 @@ export function ProductsTable({ products }) {
                 </Badge>
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-ink">
-                {CURRENCY_FORMATTER.format(product.annual_fee_1st_year)}
+                {formatRupees(product.annual_fee_1st_year)}
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-ink">
-                {CURRENCY_FORMATTER.format(product.monthly_price)}
+                {formatRupees(product.monthly_price)}
               </td>
               <td className="px-4 py-3 text-ink-subtle">
                 <span className="line-clamp-1">{product.description}</span>

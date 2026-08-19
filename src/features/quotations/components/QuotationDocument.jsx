@@ -1,6 +1,6 @@
 import { logoUrl } from '@/features/company'
 import { formatDate } from '@/lib/format'
-import { formatRupees } from '../constants'
+import { formatRupees } from '@/lib/format'
 
 /**
  * The printable quotation, reproducing the company's existing paper template.

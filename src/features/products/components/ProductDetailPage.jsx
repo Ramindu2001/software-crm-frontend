@@ -7,6 +7,7 @@ import { Button, Badge, Card, CardHeader, CardTitle, CardContent } from '@/compo
 import { useAuth } from '@/features/auth'
 import { useProduct, useProductStatus } from '../hooks'
 import { toast } from '@/lib/toastStore'
+import { formatRupees } from '@/lib/format'
 
 export function ProductDetailPage() {
   const { productId } = useParams()
@@ -52,14 +53,6 @@ export function ProductDetailPage() {
         description: err.message || 'An unexpected error occurred.',
       })
     }
-  }
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0,
-    }).format(amount)
   }
 
   return (
@@ -160,15 +153,15 @@ export function ProductDetailPage() {
                   <div className="space-y-3">
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-ink-muted">1st Year</span>
-                      <span className="font-semibold text-ink">{formatCurrency(pkg.first_year_price)}</span>
+                      <span className="font-semibold text-ink tabular-nums">{formatRupees(pkg.first_year_price)}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-ink-muted">2nd Year</span>
-                      <span className="font-semibold text-ink">{formatCurrency(pkg.second_year_price)}</span>
+                      <span className="font-semibold text-ink tabular-nums">{formatRupees(pkg.second_year_price)}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-ink-muted">Monthly</span>
-                      <span className="font-semibold text-ink">{formatCurrency(pkg.monthly_price)}</span>
+                      <span className="font-semibold text-ink tabular-nums">{formatRupees(pkg.monthly_price)}</span>
                     </div>
                   </div>
                   

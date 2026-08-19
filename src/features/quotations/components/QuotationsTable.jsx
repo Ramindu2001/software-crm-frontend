@@ -3,7 +3,8 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, Pencil, Printer } from 'lucide-reac
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { Badge, Card } from '@/components/ui'
-import { formatRupees, isEditable, QUOTATION_STATUS } from '../constants'
+import { formatRupees } from '@/lib/format'
+import { isEditable, QUOTATION_STATUS } from '../constants'
 
 /**
  * `sortable: false` marks columns outside the API's sort allowlist — customer
