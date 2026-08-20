@@ -10,6 +10,8 @@ import {
   DashboardPage,
   IssueDetailPage,
   IssuesPage,
+  LeadsPage,
+  LeadDetailPage,
   ReportsPage,
   SettingsLayout,
   ProfileSettingsPage,
@@ -94,6 +96,28 @@ export const router = createBrowserRouter([
         element: <IssueDetailPage />,
         // A function title lets the dynamic route show the issue reference.
         handle: { title: (match) => match.params.issueId },
+      },
+      {
+        // Guarded rather than left open like Issues: the pipeline is
+        // commercially sensitive in a way the support queue is not, and
+        // Developers hold leads:view precisely so the guard is meaningful.
+        path: 'leads',
+        element: (
+          <RequirePermission permissions={[PERMISSIONS.LEADS_VIEW]}>
+            <LeadsPage />
+          </RequirePermission>
+        ),
+        handle: { title: 'Leads' },
+      },
+      {
+        path: 'leads/:leadId',
+        element: (
+          <RequirePermission permissions={[PERMISSIONS.LEADS_VIEW]}>
+            <LeadDetailPage />
+          </RequirePermission>
+        ),
+        // A function title lets the dynamic route show the lead reference.
+        handle: { title: (match) => match.params.leadId },
       },
       {
         path: 'customers',

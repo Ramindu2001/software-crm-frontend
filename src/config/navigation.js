@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   CircleDot,
   Users,
+  UserPlus,
   FileText,
   BarChart3,
   Settings,
@@ -25,6 +26,9 @@ import {
 export const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard:view' },
   { to: '/issues', label: 'Issues', icon: CircleDot, permission: 'issues:view' },
+  // Ordered before Customers because that is the order of the process: an
+  // enquiry is a lead first, and becomes a customer only once it is won.
+  { to: '/leads', label: 'Leads', icon: UserPlus, permission: 'leads:view' },
   { to: '/customers', label: 'Customers', icon: Users, permission: 'customers:view' },
   { to: '/quotations', label: 'Quotations', icon: FileText, permission: 'quotations:view' },
   { to: '/products', label: 'Products', icon: Package, permission: 'products:view' },

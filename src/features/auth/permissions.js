@@ -42,6 +42,12 @@ export const PERMISSIONS = {
   ISSUES_CREATE: 'issues:create',
   ISSUES_SET_STATUS: 'issues:setStatus',
 
+  LEADS_VIEW: 'leads:view',
+  LEADS_CREATE: 'leads:create',
+  LEADS_MANAGE: 'leads:manage',
+  /** Closing a lead as won, which also writes the customer record. */
+  LEADS_CONVERT: 'leads:convert',
+
   CUSTOMERS_VIEW: 'customers:view',
   CUSTOMERS_WRITE: 'customers:write',
 
