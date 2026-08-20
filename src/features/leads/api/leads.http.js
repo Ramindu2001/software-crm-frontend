@@ -231,6 +231,41 @@ export async function createLead(input) {
   return mapLead(unwrap(payload))
 }
 
+/** Empty means "clear it"; the API reads an explicit null as a clear. */
+const blankToNull = (value) => {
+  const trimmed = typeof value === 'string' ? value.trim() : value
+  return trimmed === '' || trimmed === undefined ? null : trimmed
+}
+
+const trimmed = (value) => (typeof value === 'string' ? value.trim() : value)
+
+/** A missing enum value means "unchanged" — these columns are NOT NULL. */
+const enumOrSkip = (value) => value || undefined
+
+const numberOrNull = (value) =>
+  value === '' || value == null ? null : Number(value)
+
+/**
+ * How each UI field maps onto the API's column names and null semantics.
+ *
+ * Driving the payload from a table rather than an object literal is what makes
+ * a partial update actually partial — see updateLead below.
+ */
+const LEAD_FIELDS = {
+  contactName: ['contact_name', trimmed],
+  phone: ['phone', trimmed],
+  email: ['email', blankToNull],
+  companyName: ['company_name', blankToNull],
+  source: ['source', enumOrSkip],
+  solutionType: ['solution_type', enumOrSkip],
+  interestedProductId: ['interested_product_id', numberOrNull],
+  customScope: ['custom_scope', blankToNull],
+  requirementSummary: ['requirement_summary', blankToNull],
+  estimatedValue: ['estimated_value', numberOrNull],
+  ownerId: ['owner_id', numberOrNull],
+  nextFollowUpOn: ['next_follow_up_on', blankToNull],
+}
+
 /**
  * Edit a lead's own fields.
  *
@@ -238,37 +273,37 @@ export async function createLead(input) {
  * `updateLeadStatus` or `convertLead`, so the closed_at and lost_reason
  * bookkeeping lives in one place on the server.
  *
- * Fields the caller omits are left alone; `null` clears them. That distinction
- * is why the empty-string coercions below map to `null` rather than
- * `undefined`: this is an edit form, and clearing a field has to be possible.
+ * ── Only the keys you pass are sent ──
+ * The API treats an absent key as "leave it alone" and an explicit null as
+ * "clear it". This used to build a fixed payload naming every column, which
+ * meant a caller sending one field also sent `email: null`, `company_name:
+ * null` and so on — silently wiping everything it had not mentioned. That was
+ * survivable only because the single caller was a form that always submitted
+ * all twelve fields. Editing one field at a time would have quietly destroyed
+ * data, so the payload is now built from the keys actually supplied.
+ *
+ * @param {string} id
+ * @param {object} input Any subset of the keys in LEAD_FIELDS.
  */
 export async function updateLead(id, input) {
-  const blankToNull = (value) => {
-    const trimmed = typeof value === 'string' ? value.trim() : value
-    return trimmed === '' || trimmed === undefined ? null : trimmed
+  const payload = {}
+
+  for (const [key, value] of Object.entries(input)) {
+    const field = LEAD_FIELDS[key]
+    // Unknown keys are dropped rather than forwarded: the server would 422 on
+    // them, and the caller learns nothing useful from that.
+    if (!field) continue
+
+    const [column, coerce] = field
+    const coerced = coerce(value)
+    // `undefined` is how a coercion says "no change" — for the NOT NULL enums,
+    // where clearing is not a thing the column allows.
+    if (coerced !== undefined) payload[column] = coerced
   }
 
   try {
-    const payload = await api.put(`/leads/${encodeURIComponent(id)}`, {
-      contact_name: input.contactName?.trim(),
-      phone: input.phone?.trim(),
-      email: blankToNull(input.email),
-      company_name: blankToNull(input.companyName),
-      source: input.source || undefined,
-      solution_type: input.solutionType || undefined,
-      interested_product_id: input.interestedProductId
-        ? Number(input.interestedProductId)
-        : null,
-      custom_scope: blankToNull(input.customScope),
-      requirement_summary: blankToNull(input.requirementSummary),
-      estimated_value:
-        input.estimatedValue === '' || input.estimatedValue == null
-          ? null
-          : Number(input.estimatedValue),
-      owner_id: input.ownerId ? Number(input.ownerId) : null,
-      next_follow_up_on: blankToNull(input.nextFollowUpOn),
-    })
-    return mapLead(unwrap(payload))
+    const response = await api.put(`/leads/${encodeURIComponent(id)}`, payload)
+    return mapLead(unwrap(response))
   } catch (error) {
     return rethrow(error, id)
   }

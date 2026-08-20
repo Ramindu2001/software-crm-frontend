@@ -83,6 +83,33 @@ export const OPEN_STATUS_OPTIONS = Object.values(LEAD_STATUS)
   .sort((a, b) => a.rank - b.rank)
   .map(({ value, label }) => ({ value, label }))
 
+/**
+ * The open stages in pipeline order.
+ *
+ * Drives both the board's columns and the detail page's stepper, so the two
+ * can never present a different pipeline. Won and Lost are excluded for the
+ * same reason they are excluded from the status dropdown: neither is reachable
+ * by a plain stage move, and a board column that only ever accepts drops but
+ * never shows a card is a column pulling its weight in neither direction.
+ */
+export const OPEN_STAGES = Object.values(LEAD_STATUS)
+  .filter((entry) => !CLOSED_STATUSES.includes(entry.value))
+  .sort((a, b) => a.rank - b.rank)
+
+/** Position in the pipeline, or -1 for a stage we don't know. */
+export const stageRank = (status) => LEAD_STATUS[status]?.rank ?? -1
+
+/**
+ * The stage after this one, or null at the end of the open pipeline.
+ * Used for the stepper's "advance" affordance, which is the move a rep makes
+ * far more often than any other.
+ */
+export function nextStage(status) {
+  const index = OPEN_STAGES.findIndex((stage) => stage.value === status)
+  if (index === -1 || index === OPEN_STAGES.length - 1) return null
+  return OPEN_STAGES[index + 1]
+}
+
 export const LEAD_SOLUTION_TYPE = {
   Undecided: {
     value: 'Undecided',

@@ -1,7 +1,16 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Ban, FileText, SearchX, Trophy, TriangleAlert } from 'lucide-react'
-import { EmptyState, FullPageLoader } from '@/components/common'
+import {
+  ArrowLeft,
+  Ban,
+  FileText,
+  Lock,
+  PhoneCall,
+  SearchX,
+  TriangleAlert,
+  Trophy,
+} from 'lucide-react'
+import { ApiErrorAlert, EmptyState, FullPageLoader } from '@/components/common'
 import {
   Badge,
   Button,
@@ -9,21 +18,18 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Select,
 } from '@/components/ui'
 import { useAuth } from '@/features/auth'
 import { formatDate } from '@/lib/format'
 import { toast } from '@/lib/toastStore'
 import { updateLeadStatus } from '../api'
 import { useLead, useLookups } from '../hooks'
-import {
-  LEAD_LOST_REASON,
-  LEAD_STATUS,
-  OPEN_STATUS_OPTIONS,
-  isOpen,
-} from '../constants'
+import { LEAD_LOST_REASON, LEAD_STATUS, isOpen } from '../constants'
 import { LeadStatusBadge } from './LeadBadges'
+import { LeadPipelineStepper } from './LeadPipelineStepper'
+import { LeadVerdict } from './LeadVerdict'
 import { LeadDetailsPanel } from './LeadDetailsPanel'
+import { LeadNotesCard } from './LeadNotesCard'
 import { LeadRequirements } from './LeadRequirements'
 import { LeadActivityTimeline } from './LeadActivityTimeline'
 import { LogActivityModal } from './LogActivityModal'
@@ -34,11 +40,12 @@ import { ConvertLeadModal } from './ConvertLeadModal'
  * The lead workspace.
  *
  * Everything a rep needs between the first call and the close, on one screen:
- * what they asked for, what has been said so far, and the two ways this ends.
+ * where it is in the pipeline, what they asked for, what has been said so far,
+ * and the two ways this ends.
  *
- * Every mutation here returns the whole updated lead, so each handler swaps
- * the cached record via `applyLead` rather than refetching — six endpoints,
- * zero follow-up reads.
+ * Every mutation here returns the whole updated lead, so each handler swaps the
+ * cached record via `applyLead` rather than refetching — seven endpoints, zero
+ * follow-up reads.
  */
 
 /** Shown once the lead is closed, in place of the working controls. */
@@ -56,8 +63,16 @@ function Outcome({ lead }) {
               agreements are raised against that customer record.
             </p>
           </div>
+
+          {/* The customer id rides along in the link. It used to point at a
+              blank form, so the very first thing anybody did after winning a
+              deal was re-pick the customer they had just created. */}
           {lead.customer && (
-            <Button as={Link} to="/quotations/new" size="sm">
+            <Button
+              as={Link}
+              to={`/quotations/new?customer=${lead.customer.id}`}
+              size="sm"
+            >
               <FileText className="size-4" aria-hidden="true" />
               Raise a quotation
             </Button>
@@ -93,8 +108,8 @@ export function LeadDetailPage() {
   const canManage = can('leads:manage')
   const canConvert = can('leads:convert')
 
-  // Only fetched for users who can act on them — a read-only viewer never
-  // opens the edit form, so two picker requests would be wasted.
+  // Only fetched for users who can act on them — a read-only viewer never opens
+  // an editor, so two picker requests would be wasted.
   const { owners, products } = useLookups({
     owners: canManage,
     products: canManage,
@@ -106,8 +121,8 @@ export function LeadDetailPage() {
 
   if (isLoading && !lead) return <FullPageLoader />
 
-  // EmptyState, not RouteFallback: the latter takes no props and renders only
-  // a spinner, so passing it a title would leave this screen loading forever.
+  // EmptyState, not RouteFallback: the latter takes no props and renders only a
+  // spinner, so passing it a title would leave this screen loading forever.
   if (isNotFound) {
     return (
       <EmptyState
@@ -138,47 +153,26 @@ export function LeadDetailPage() {
     )
   }
 
-  const handleStageChange = async (event) => {
-    const status = event.target.value
+  const open = isOpen(lead)
+  const canEdit = canManage && open
+
+  const handleStageMove = async (status) => {
     setIsMovingStage(true)
     setStageError(null)
 
     try {
-      const updated = await updateLeadStatus(lead.id, status)
-      applyLead(updated)
+      applyLead(await updateLeadStatus(lead.id, status))
       toast.success('Stage updated', {
         description: `${lead.id} is now ${LEAD_STATUS[status]?.label ?? status}.`,
       })
     } catch (caught) {
-      setStageError(caught.message ?? 'Could not move the lead.')
+      setStageError(caught)
     } finally {
       setIsMovingStage(false)
     }
   }
 
-  const handleClosed = (updated) => {
-    setDialog(null)
-    applyLead(updated)
-    toast.success('Lead closed as lost', {
-      description: 'The reason is recorded and will show up in loss reporting.',
-    })
-  }
-
-  const handleConverted = (updated) => {
-    setDialog(null)
-    applyLead(updated)
-    toast.success('Lead won', {
-      description: `${updated.customer?.name ?? 'The customer'} is now in the directory and can be quoted.`,
-    })
-  }
-
-  const handleLogged = (updated) => {
-    setDialog(null)
-    applyLead(updated)
-    toast.success('Contact logged')
-  }
-
-  const open = isOpen(lead)
+  const closeDialog = () => setDialog(null)
 
   return (
     <>
@@ -204,11 +198,22 @@ export function LeadDetailPage() {
           )}
         </div>
 
-        {/* The two ways a lead ends, offered only while it is still live. */}
         {open && (
           <div className="flex flex-wrap items-center gap-2">
+            {/* First, and not tucked into the timeline below: logging contact is
+                the most frequent thing anybody does on this screen. */}
             {canManage && (
-              <Button variant="secondary" size="sm" onClick={() => setDialog('lost')}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setDialog('activity')}
+              >
+                <PhoneCall className="size-4" aria-hidden="true" />
+                Log contact
+              </Button>
+            )}
+            {canManage && (
+              <Button variant="ghost" size="sm" onClick={() => setDialog('lost')}>
                 <Ban className="size-4" aria-hidden="true" />
                 Close as lost
               </Button>
@@ -229,26 +234,26 @@ export function LeadDetailPage() {
         </div>
       )}
 
+      {/* The routing decision, at the top where it belongs — this is what
+          decides whether the deal is a product sale or a build commitment. */}
+      <LeadVerdict stats={lead.requirementStats} className="mb-5" />
+
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="flex flex-col gap-5 lg:col-span-2">
-          {/* The stage control sits above the requirements, because moving the
-              lead is the thing a rep does most often on this screen. */}
-          {open && canManage && (
+          {open && (
             <Card>
               <CardHeader>
                 <CardTitle as="h2" className="text-sm">
                   Pipeline stage
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <Select
-                  label="Stage"
-                  value={lead.status}
-                  onChange={handleStageChange}
-                  options={OPEN_STATUS_OPTIONS}
-                  disabled={isMovingStage}
-                  error={stageError ?? undefined}
-                  hint={LEAD_STATUS[lead.status]?.hint}
+              <CardContent className="flex flex-col gap-3">
+                {stageError && <ApiErrorAlert error={stageError} />}
+                <LeadPipelineStepper
+                  status={lead.status}
+                  canManage={canManage}
+                  isMoving={isMovingStage}
+                  onMove={handleStageMove}
                 />
               </CardContent>
             </Card>
@@ -257,58 +262,67 @@ export function LeadDetailPage() {
           <LeadRequirements
             lead={lead}
             products={products}
-            canManage={canManage && open}
+            canManage={canEdit}
             onChange={applyLead}
           />
 
-          {/* Free-text capture from the calls, kept alongside the itemised
-              requirements — a rep types a paragraph first and itemises after. */}
-          {lead.requirementSummary && (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2" className="text-sm">
-                  Notes from the calls
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm leading-relaxed whitespace-pre-line text-ink-muted">
-                  {lead.requirementSummary}
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          <LeadNotesCard
+            lead={lead}
+            field="requirementSummary"
+            title="Notes from the calls"
+            placeholder="Whatever they told you on the phone. Individual requirements are itemised above."
+            canManage={canEdit}
+            onChange={applyLead}
+          />
 
-          {lead.customScope && (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2" className="text-sm">
-                  Proposed custom scope
-                  <Badge tone="brand" size="sm" className="ml-2">
-                    Custom development
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm leading-relaxed whitespace-pre-line text-ink-muted">
-                  {lead.customScope}
-                </p>
-              </CardContent>
-            </Card>
+          {/* Only on the path where a scope means anything — or where one has
+              already been written, so nothing is ever hidden by a later change
+              of solution type. */}
+          {(lead.customScope || lead.solutionType === 'Custom Development') && (
+            <LeadNotesCard
+              lead={lead}
+              field="customScope"
+              title="Proposed custom scope"
+              placeholder="What we would build, in enough detail to estimate it."
+              canManage={canEdit}
+              onChange={applyLead}
+              badge={
+                <Badge tone="brand" size="sm">
+                  Custom development
+                </Badge>
+              }
+            />
           )}
 
           <LeadActivityTimeline
             activities={lead.activities}
-            canManage={canManage && open}
+            canManage={canEdit}
             onLog={() => setDialog('activity')}
           />
         </div>
 
-        <aside>
+        <aside className="flex flex-col gap-5">
+          {/* Says plainly why the controls are gone. Without it a closed lead
+              just looks like a page whose buttons failed to render. */}
+          {!open && (
+            <Card>
+              <CardContent className="flex items-start gap-2.5 p-4">
+                <Lock className="mt-0.5 size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+                <p className="text-xs text-ink-muted">
+                  This lead is closed, so its details are read-only.
+                  {lead.status === 'Won'
+                    ? ' Changes now belong on the customer record it became.'
+                    : ' Reopen it by moving it back to an open stage from the pipeline.'}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           <LeadDetailsPanel
             lead={lead}
             owners={owners}
             products={products}
-            canManage={canManage && open}
+            canManage={canEdit}
             onChange={applyLead}
           />
         </aside>
@@ -318,22 +332,40 @@ export function LeadDetailPage() {
       {dialog === 'activity' && (
         <LogActivityModal
           lead={lead}
-          onClose={() => setDialog(null)}
-          onLogged={handleLogged}
+          onClose={closeDialog}
+          onLogged={(updated) => {
+            closeDialog()
+            applyLead(updated)
+            toast.success('Contact logged')
+          }}
         />
       )}
+
       {dialog === 'lost' && (
         <CloseLeadModal
           lead={lead}
-          onClose={() => setDialog(null)}
-          onClosed={handleClosed}
+          onClose={closeDialog}
+          onClosed={(updated) => {
+            closeDialog()
+            applyLead(updated)
+            toast.success('Lead closed as lost', {
+              description: 'The reason is recorded and will show up in loss reporting.',
+            })
+          }}
         />
       )}
+
       {dialog === 'convert' && (
         <ConvertLeadModal
           lead={lead}
-          onClose={() => setDialog(null)}
-          onConverted={handleConverted}
+          onClose={closeDialog}
+          onConverted={(updated) => {
+            closeDialog()
+            applyLead(updated)
+            toast.success('Lead won', {
+              description: `${updated.customer?.name ?? 'The customer'} is now in the directory and can be quoted.`,
+            })
+          }}
         />
       )}
     </>

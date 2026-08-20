@@ -1,164 +1,121 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listLeads } from '../api'
-import { ANY } from '../constants'
-
-const DEFAULT_FILTERS = {
-  query: '',
-  status: ANY,
-  source: ANY,
-  solutionType: ANY,
-  ownerId: ANY,
-  followUp: ANY,
-}
-
-/** Newest enquiries first — a lead that came in this morning is the urgent one. */
-const DEFAULT_SORT = { by: 'createdAt', dir: 'desc' }
-const PER_PAGE = 10
 
 /**
- * Fetches and manages the lead pipeline, including filters, sorting and paging.
+ * One page of the pipeline, for the list view.
  *
- * Filtering, sorting and pagination are sent to the API rather than applied to
- * the response, matching how the paginated endpoint behaves.
+ * Filtering, sorting and paging are all sent to the API rather than applied to
+ * the response — the endpoint is server-paginated, so filtering locally would
+ * only ever filter the page you happen to be holding.
  *
- * @param {{followUp?: string}} [initial] Seeds a filter on mount, so the
- *   follow-up tiles on the page above can link straight into a filtered view.
+ * The state this reads now lives in the URL (see useLeadFilters); this hook
+ * just turns it into a request and holds the answer.
+ *
+ * @param {object} options
+ * @param {object} options.request Settled filter values.
+ * @param {{by: string, dir: 'asc'|'desc'}} options.sort
+ * @param {number} options.page
+ * @param {boolean} [options.enabled] False while the board view is showing, so
+ *   the inactive view costs nothing.
  */
-export function useLeads(initial = {}) {
-  const [filters, setFilters] = useState({ ...DEFAULT_FILTERS, ...initial })
-  const [sort, setSort] = useState(DEFAULT_SORT)
-  const [page, setPage] = useState(1)
-  // Bumped to force a refetch after a mutation.
+
+/**
+ * Enough rows that a normal pipeline is one page. The old value was 10, which
+ * turned "look at my leads" into a paging exercise.
+ */
+const PER_PAGE = 25
+
+const EMPTY = {
+  data: [],
+  total: 0,
+  filteredTotal: 0,
+  currentPage: 1,
+  lastPage: 1,
+  perPage: PER_PAGE,
+}
+
+export function useLeads({ request, sort, page, enabled = true }) {
   const [nonce, setNonce] = useState(0)
 
-  // The typed value drives the input immediately; only the settled value
-  // triggers a request.
-  const debouncedQuery = useDebouncedValue(filters.query, 300)
-
-  // Reset to page 1 whenever any filter or sort value changes. A ref tracks
-  // whether the effect is running for the first time so we don't clobber the
-  // initial page value on mount.
-  const isFirstRender = useRef(true)
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
-    }
-    setPage(1)
-  }, [
-    debouncedQuery,
-    filters.status,
-    filters.source,
-    filters.solutionType,
-    filters.ownerId,
-    filters.followUp,
-    sort.by,
-    sort.dir,
-  ])
-
-  const request = useMemo(
+  const fetchKey = useMemo(
     () => ({
-      query: debouncedQuery,
-      status: filters.status,
-      source: filters.source,
-      solutionType: filters.solutionType,
-      ownerId: filters.ownerId,
-      followUp: filters.followUp,
+      query: request.query,
+      status: request.status,
+      source: request.source,
+      solutionType: request.solutionType,
+      ownerId: request.ownerId,
+      followUp: request.followUp,
       sortBy: sort.by,
       sortDir: sort.dir,
       page,
       perPage: PER_PAGE,
       nonce,
+      enabled,
     }),
     [
-      debouncedQuery,
-      filters.status,
-      filters.source,
-      filters.solutionType,
-      filters.ownerId,
-      filters.followUp,
+      request.query,
+      request.status,
+      request.source,
+      request.solutionType,
+      request.ownerId,
+      request.followUp,
       sort.by,
       sort.dir,
       page,
       nonce,
+      enabled,
     ],
   )
 
-  const [result, setResult] = useState({
-    request: null,
-    data: [],
-    total: 0,
-    filteredTotal: 0,
-    currentPage: 1,
-    lastPage: 1,
-    perPage: PER_PAGE,
-    error: null,
-  })
+  const [result, setResult] = useState({ key: null, ...EMPTY, error: null })
 
-  // Derived rather than stored: no setState-in-effect cascade, and the
-  // previous rows stay on screen while a new request is in flight instead of
-  // the table flashing empty on every keystroke.
-  const isLoading = result.request !== request
+  /**
+   * Derived rather than stored: no setState-in-effect cascade, and the previous
+   * rows stay on screen while a new request is in flight instead of the table
+   * flashing empty on every keystroke.
+   */
+  const isLoading = enabled && result.key !== fetchKey
 
   useEffect(() => {
+    if (!enabled) return
+
     // Guards against out-of-order responses clobbering newer results when
     // filters change faster than requests resolve.
     let ignore = false
 
-    listLeads(request)
+    listLeads(fetchKey)
       .then((response) => {
         if (ignore) return
-        setResult({
-          request,
-          data: response.data,
-          total: response.total,
-          filteredTotal: response.filteredTotal,
-          currentPage: response.currentPage,
-          lastPage: response.lastPage,
-          perPage: response.perPage,
-          error: null,
-        })
+        setResult({ key: fetchKey, ...response, error: null })
       })
       .catch((error) => {
         if (ignore) return
-        setResult({
-          request,
-          data: [],
-          total: 0,
-          filteredTotal: 0,
-          currentPage: 1,
-          lastPage: 1,
-          perPage: PER_PAGE,
-          error,
-        })
+        setResult({ key: fetchKey, ...EMPTY, error })
       })
 
     return () => {
       ignore = true
     }
-  }, [request])
-
-  const setFilter = useCallback((key, value) => {
-    setFilters((current) => ({ ...current, [key]: value }))
-  }, [])
-
-  const resetFilters = useCallback(() => setFilters(DEFAULT_FILTERS), [])
-
-  /** First click sorts ascending; clicking the active column flips direction. */
-  const toggleSort = useCallback((field) => {
-    setSort((current) =>
-      current.by === field
-        ? { by: field, dir: current.dir === 'asc' ? 'desc' : 'asc' }
-        : { by: field, dir: 'asc' },
-    )
-  }, [])
+  }, [fetchKey, enabled])
 
   const refresh = useCallback(() => setNonce((current) => current + 1), [])
 
-  const hasActiveFilters = Object.keys(DEFAULT_FILTERS).some(
-    (key) => filters[key] !== DEFAULT_FILTERS[key],
-  )
+  /**
+   * Swap one row for the version a mutation just returned.
+   *
+   * The row-level actions in the list (log a call, move a stage) answer with
+   * the whole updated lead, exactly like the detail page's do. Splicing it in
+   * beats refetching the page: the rest of the table does not move, and the
+   * row the user just acted on updates under their cursor.
+   */
+  const applyLead = useCallback((updated) => {
+    setResult((current) => ({
+      ...current,
+      data: current.data.map((lead) =>
+        lead.leadId === updated.leadId ? updated : lead,
+      ),
+    }))
+  }, [])
 
   return {
     leads: result.data,
@@ -166,17 +123,10 @@ export function useLeads(initial = {}) {
     isLoading,
     total: result.total,
     filteredTotal: result.filteredTotal,
-    filters,
-    sort,
-    hasActiveFilters,
-    setFilter,
-    resetFilters,
-    toggleSort,
-    refresh,
-    // Pagination
     page: result.currentPage,
     lastPage: result.lastPage,
     perPage: result.perPage,
-    setPage,
+    refresh,
+    applyLead,
   }
 }

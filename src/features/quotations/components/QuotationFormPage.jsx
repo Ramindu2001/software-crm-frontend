@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, ShieldAlert, Trash2, TriangleAlert } from 'lucide-react'
 import { ApiErrorAlert, EmptyState, PageHeader, RouteFallback } from '@/components/common'
 import {
@@ -39,6 +39,12 @@ export function QuotationFormPage() {
   const navigate = useNavigate()
   const isEdit = Boolean(quotationId)
 
+  // `?customer=4` — how a won lead hands off to a quotation. The lead knows who
+  // it became, so the form opens on that customer rather than making the user
+  // find them again in a list of everybody.
+  const [searchParams] = useSearchParams()
+  const initialCustomerId = searchParams.get('customer') ?? ''
+
   const { can } = useAuth()
   const canCreate = can(PERMISSIONS.QUOTATIONS_CREATE)
 
@@ -52,6 +58,7 @@ export function QuotationFormPage() {
   const builder = useQuotationBuilder({
     companySettings: settings,
     initialQuotation: isEdit ? quotation : null,
+    initialCustomerId: isEdit ? undefined : initialCustomerId,
   })
 
   const [errors, setErrors] = useState({})

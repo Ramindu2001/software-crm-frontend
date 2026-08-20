@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pencil, X } from 'lucide-react'
+import { Check, Pencil, X } from 'lucide-react'
 import { ApiErrorAlert } from '@/components/common'
 import {
   Button,
@@ -10,8 +10,9 @@ import {
   Input,
   MoneyInput,
   Select,
-  Textarea,
+  Spinner,
 } from '@/components/ui'
+import { cn } from '@/lib/utils'
 import { formatDate, formatRupees } from '@/lib/format'
 import { updateLead } from '../api'
 import {
@@ -23,81 +24,179 @@ import {
 import { SolutionTypeBadge } from './LeadBadges'
 
 /**
- * The lead's own fields — read as a summary, edited in place.
+ * The lead's own fields — read as a summary, edited one at a time.
  *
- * Status is deliberately absent. It moves through the stage control and the
- * close/convert actions on the page above, so all the bookkeeping that hangs
- * off a stage change (closed_at, lost_reason, the customer record) lives in
- * one path rather than being reachable from an ordinary edit form too.
+ * ── What changed, and why ──
+ * Editing used to be all-or-nothing: pressing Edit swapped the entire read view
+ * for a twelve-field form. Changing a follow-up date — far and away the most
+ * common edit — meant being handed the contact name, phone, email, company,
+ * source, owner, solution type, product, value and two textareas, then hunting
+ * for the one field you came for and submitting the lot. Every save also sent
+ * all twelve columns, so an unrelated field mid-edit could be clobbered by a
+ * stale value.
  *
- * The product picker only appears when the solution type is "Existing
- * Product", and the scope box only when it is "Custom Development": asking
- * which product covers a bespoke build is a question with no answer.
+ * Now each row edits itself. One field, one request, one thing that can change.
+ *
+ * Status is deliberately absent, as before. It moves through the stepper and
+ * the close/convert actions on the page above, so all the bookkeeping that
+ * hangs off a stage change (closed_at, lost_reason, the customer record) lives
+ * in one path rather than being reachable from an ordinary edit form too.
  */
-
-function Row({ label, children }) {
-  return (
-    <div className="flex items-start justify-between gap-3 py-2.5">
-      <dt className="shrink-0 text-sm text-ink-muted">{label}</dt>
-      <dd className="min-w-0 text-right text-sm text-ink">{children}</dd>
-    </div>
-  )
-}
 
 const EMPTY = <span className="text-ink-subtle">—</span>
 
-function ReadView({ lead }) {
+/** Builds the row definitions from the current lead. */
+function buildFields({ lead, owners, products }) {
   const urgency = followUpUrgency(lead.nextFollowUpOn)
 
-  return (
-    <dl className="divide-y divide-line">
-      <Row label="Phone">
-        <a href={`tel:${lead.phone.replace(/\s/g, '')}`} className="hover:text-brand-700">
+  const fields = [
+    {
+      key: 'contactName',
+      label: 'Contact name',
+      control: 'text',
+      value: lead.contactName,
+      display: lead.contactName,
+    },
+    {
+      key: 'phone',
+      label: 'Phone',
+      control: 'tel',
+      value: lead.phone,
+      display: (
+        <a
+          href={`tel:${lead.phone.replace(/\s/g, '')}`}
+          className="hover:text-brand-700"
+        >
           {lead.phone}
         </a>
-      </Row>
-      <Row label="Email">
-        {lead.email ? (
-          <a href={`mailto:${lead.email}`} className="truncate hover:text-brand-700">
-            {lead.email}
-          </a>
-        ) : (
-          EMPTY
-        )}
-      </Row>
-      <Row label="Company">{lead.companyName || EMPTY}</Row>
-      <Row label="Source">{LEAD_SOURCE[lead.source]?.label ?? lead.source}</Row>
-      <Row label="Owner">{lead.owner?.name ?? <span className="text-ink-subtle">Unassigned</span>}</Row>
-      <Row label="Solution">
-        <SolutionTypeBadge solutionType={lead.solutionType} size="sm" />
-      </Row>
-      {lead.interestedProduct && (
-        <Row label="Product">{lead.interestedProduct.name}</Row>
-      )}
-      <Row label="Estimated value">
-        {lead.estimatedValue == null ? EMPTY : formatRupees(lead.estimatedValue)}
-      </Row>
-      <Row label="Next follow-up">
-        {lead.nextFollowUpOn ? (
-          <span className="flex flex-col items-end gap-0.5">
-            <time dateTime={lead.nextFollowUpOn}>{formatDate(lead.nextFollowUpOn)}</time>
-            {urgency && (
-              <span
-                className={
-                  urgency.tone === 'danger' ? 'text-xs text-danger-strong' : 'text-xs text-warning-strong'
-                }
-              >
-                {urgency.label}
-              </span>
-            )}
-          </span>
-        ) : (
-          <span className="text-ink-subtle italic">Not scheduled</span>
-        )}
-      </Row>
-      <Row label="Captured">{formatDate(lead.createdAt)}</Row>
-    </dl>
+      ),
+    },
+    {
+      key: 'email',
+      label: 'Email',
+      control: 'email',
+      value: lead.email,
+      display: lead.email ? (
+        <a href={`mailto:${lead.email}`} className="truncate hover:text-brand-700">
+          {lead.email}
+        </a>
+      ) : (
+        EMPTY
+      ),
+    },
+    {
+      key: 'companyName',
+      label: 'Company',
+      control: 'text',
+      value: lead.companyName,
+      display: lead.companyName || EMPTY,
+    },
+    {
+      key: 'source',
+      label: 'Source',
+      control: 'select',
+      options: SOURCE_OPTIONS,
+      value: lead.source,
+      display: LEAD_SOURCE[lead.source]?.label ?? lead.source,
+    },
+    {
+      key: 'ownerId',
+      label: 'Owner',
+      control: 'select',
+      options: owners,
+      placeholder: 'Unassigned',
+      value: lead.owner?.id ?? '',
+      display: lead.owner?.name ?? <span className="text-ink-subtle">Unassigned</span>,
+    },
+    {
+      key: 'solutionType',
+      label: 'Solution',
+      control: 'select',
+      options: SOLUTION_TYPE_OPTIONS,
+      value: lead.solutionType,
+      display: <SolutionTypeBadge solutionType={lead.solutionType} size="sm" />,
+      hint: 'The requirements panel suggests this; you decide it.',
+    },
+  ]
+
+  // Asking which product covers a bespoke build is a question with no answer,
+  // so the picker only exists on the path where it means something.
+  if (lead.solutionType === 'Existing Product') {
+    fields.push({
+      key: 'interestedProductId',
+      label: 'Product',
+      control: 'select',
+      options: products,
+      placeholder: 'Not chosen yet',
+      value: lead.interestedProduct?.id ?? '',
+      display: lead.interestedProduct?.name ?? EMPTY,
+    })
+  }
+
+  fields.push(
+    {
+      key: 'estimatedValue',
+      label: 'Estimated value',
+      control: 'money',
+      value: lead.estimatedValue ?? '',
+      display: lead.estimatedValue == null ? EMPTY : formatRupees(lead.estimatedValue),
+    },
+    {
+      key: 'nextFollowUpOn',
+      label: 'Next follow-up',
+      control: 'date',
+      value: lead.nextFollowUpOn ?? '',
+      display: lead.nextFollowUpOn ? (
+        <span className="flex flex-col items-end gap-0.5">
+          <time dateTime={lead.nextFollowUpOn}>{formatDate(lead.nextFollowUpOn)}</time>
+          {urgency && (
+            <span
+              className={cn(
+                'text-xs',
+                urgency.tone === 'danger'
+                  ? 'text-danger-strong'
+                  : 'text-warning-strong',
+              )}
+            >
+              {urgency.label}
+            </span>
+          )}
+        </span>
+      ) : (
+        <span className="text-ink-subtle italic">Not scheduled</span>
+      ),
+    },
   )
+
+  return fields
+}
+
+function EditControl({ field, value, onChange, onCommit, onCancel }) {
+  const handleKeyDown = (event) => {
+    if (event.key === 'Enter' && field.control !== 'select') {
+      event.preventDefault()
+      onCommit()
+    }
+    if (event.key === 'Escape') onCancel()
+  }
+
+  const shared = {
+    value,
+    onChange: (event) => onChange(event.target.value),
+    onKeyDown: handleKeyDown,
+    'aria-label': field.label,
+    autoFocus: true,
+  }
+
+  if (field.control === 'select') {
+    return <Select {...shared} options={field.options} placeholder={field.placeholder} />
+  }
+
+  if (field.control === 'money') {
+    return <MoneyInput {...shared} placeholder="0.00" />
+  }
+
+  return <Input {...shared} type={field.control} />
 }
 
 /**
@@ -109,41 +208,38 @@ function ReadView({ lead }) {
  * @param {(lead: object) => void} props.onChange
  */
 export function LeadDetailsPanel({ lead, owners, products, canManage, onChange }) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [values, setValues] = useState(null)
-  const [error, setError] = useState(null)
+  const [editing, setEditing] = useState(null)
+  const [draft, setDraft] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState(null)
 
-  const startEditing = () => {
-    setValues({
-      contactName: lead.contactName,
-      phone: lead.phone,
-      email: lead.email,
-      companyName: lead.companyName,
-      source: lead.source,
-      solutionType: lead.solutionType,
-      interestedProductId: lead.interestedProduct?.id ?? '',
-      customScope: lead.customScope,
-      requirementSummary: lead.requirementSummary,
-      estimatedValue: lead.estimatedValue ?? '',
-      ownerId: lead.owner?.id ?? '',
-      nextFollowUpOn: lead.nextFollowUpOn ?? '',
-    })
+  const fields = buildFields({ lead, owners, products })
+
+  const startEdit = (field) => {
+    setEditing(field.key)
+    setDraft(field.value ?? '')
     setError(null)
-    setIsEditing(true)
   }
 
-  const setValue = (key) => (event) =>
-    setValues((current) => ({ ...current, [key]: event.target.value }))
+  const cancel = () => {
+    setEditing(null)
+    setError(null)
+  }
 
-  const handleSubmit = async (event) => {
-    event.preventDefault()
+  const commit = async (field) => {
+    // Nothing typed, nothing to send — and a no-op PUT would come back 400
+    // ("no fields to update") for a user who simply changed their mind.
+    if (String(draft ?? '') === String(field.value ?? '')) {
+      cancel()
+      return
+    }
+
     setIsSaving(true)
     setError(null)
 
     try {
-      onChange(await updateLead(lead.id, values))
-      setIsEditing(false)
+      onChange(await updateLead(lead.id, { [field.key]: draft }))
+      setEditing(null)
     } catch (caught) {
       setError(caught)
     } finally {
@@ -153,129 +249,97 @@ export function LeadDetailsPanel({ lead, owners, products, canManage, onChange }
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
+      <CardHeader>
         <CardTitle as="h2" className="text-sm">
           Details
         </CardTitle>
-
-        {canManage &&
-          (isEditing ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsEditing(false)}
-              disabled={isSaving}
-            >
-              <X className="size-4" aria-hidden="true" />
-              Cancel
-            </Button>
-          ) : (
-            <Button variant="ghost" size="sm" onClick={startEditing}>
-              <Pencil className="size-3.5" aria-hidden="true" />
-              Edit
-            </Button>
-          ))}
       </CardHeader>
 
-      <CardContent>
-        {!isEditing ? (
-          <ReadView lead={lead} />
-        ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {error && <ApiErrorAlert error={error} />}
+      <CardContent className="flex flex-col gap-3">
+        {error && <ApiErrorAlert error={error} />}
 
-            <Input
-              label="Contact name"
-              value={values.contactName}
-              onChange={setValue('contactName')}
-              required
-            />
-            <Input
-              label="Phone"
-              type="tel"
-              value={values.phone}
-              onChange={setValue('phone')}
-              required
-            />
-            <Input
-              label="Email"
-              type="email"
-              value={values.email}
-              onChange={setValue('email')}
-            />
-            <Input
-              label="Company"
-              value={values.companyName}
-              onChange={setValue('companyName')}
-            />
-            <Select
-              label="Source"
-              value={values.source}
-              onChange={setValue('source')}
-              options={SOURCE_OPTIONS}
-            />
-            <Select
-              label="Owner"
-              value={values.ownerId}
-              onChange={setValue('ownerId')}
-              options={owners}
-              placeholder="Unassigned"
-            />
+        <dl className="divide-y divide-line">
+          {fields.map((field) => {
+            const isEditing = editing === field.key
 
-            <Select
-              label="Solution"
-              value={values.solutionType}
-              onChange={setValue('solutionType')}
-              options={SOLUTION_TYPE_OPTIONS}
-              hint="The requirements panel suggests this; you decide it."
-            />
+            if (isEditing) {
+              return (
+                <div key={field.key} className="flex flex-col gap-2 py-3">
+                  <dt className="text-sm font-medium text-ink">{field.label}</dt>
+                  <dd className="flex flex-col gap-2">
+                    <EditControl
+                      field={field}
+                      value={draft}
+                      onChange={setDraft}
+                      onCommit={() => commit(field)}
+                      onCancel={cancel}
+                    />
+                    {field.hint && (
+                      <p className="text-xs text-ink-muted">{field.hint}</p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => commit(field)}
+                        isLoading={isSaving}
+                        disabled={isSaving}
+                      >
+                        {!isSaving && <Check className="size-4" aria-hidden="true" />}
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={cancel}
+                        disabled={isSaving}
+                      >
+                        <X className="size-4" aria-hidden="true" />
+                        Cancel
+                      </Button>
+                    </div>
+                  </dd>
+                </div>
+              )
+            }
 
-            {values.solutionType === 'Existing Product' && (
-              <Select
-                label="Which product?"
-                value={values.interestedProductId}
-                onChange={setValue('interestedProductId')}
-                options={products}
-                placeholder="Not chosen yet"
-              />
-            )}
+            return (
+              <div
+                key={field.key}
+                className="group flex items-start justify-between gap-3 py-2.5"
+              >
+                <dt className="shrink-0 text-sm text-ink-muted">{field.label}</dt>
+                <dd className="flex min-w-0 items-start gap-1 text-right text-sm text-ink">
+                  <span className="min-w-0">{field.display}</span>
 
-            {values.solutionType === 'Custom Development' && (
-              <Textarea
-                label="Proposed scope"
-                value={values.customScope}
-                onChange={setValue('customScope')}
-                placeholder="What we would build, in enough detail to estimate it."
-                rows={4}
-              />
-            )}
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => startEdit(field)}
+                      aria-label={`Edit ${field.label}`}
+                      // Revealed on hover for pointer users, but always present
+                      // for keyboard focus — an action that only exists on hover
+                      // does not exist for anybody navigating by Tab.
+                      className="-my-0.5 shrink-0 rounded p-1 text-ink-subtle opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-ink"
+                    >
+                      <Pencil className="size-3" aria-hidden="true" />
+                    </button>
+                  )}
+                </dd>
+              </div>
+            )
+          })}
 
-            <MoneyInput
-              label="Estimated value"
-              value={values.estimatedValue}
-              onChange={setValue('estimatedValue')}
-              placeholder="0.00"
-            />
+          <div className="flex items-start justify-between gap-3 py-2.5">
+            <dt className="shrink-0 text-sm text-ink-muted">Captured</dt>
+            <dd className="text-right text-sm text-ink">{formatDate(lead.createdAt)}</dd>
+          </div>
+        </dl>
 
-            <Input
-              label="Next follow-up"
-              type="date"
-              value={values.nextFollowUpOn}
-              onChange={setValue('nextFollowUpOn')}
-            />
-
-            <Textarea
-              label="Requirement notes"
-              value={values.requirementSummary}
-              onChange={setValue('requirementSummary')}
-              placeholder="Free-text capture from the calls."
-              rows={3}
-            />
-
-            <Button type="submit" fullWidth disabled={isSaving}>
-              {isSaving ? 'Saving…' : 'Save changes'}
-            </Button>
-          </form>
+        {isSaving && (
+          <p className="flex items-center gap-2 text-xs text-ink-muted">
+            <Spinner className="size-3" />
+            Saving…
+          </p>
         )}
       </CardContent>
     </Card>

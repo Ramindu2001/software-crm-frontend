@@ -1,9 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { History } from 'lucide-react'
 import { ApiErrorAlert } from '@/components/common'
 import { Button, Input, MoneyInput, Modal, Select, Textarea } from '@/components/ui'
-import { createLead } from '../api'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { formatDate } from '@/lib/format'
+import { createLead, listLeads } from '../api'
 import { useLookups } from '../hooks'
 import { SOURCE_OPTIONS } from '../constants'
+import { LeadStatusBadge } from './LeadBadges'
 
 /**
  * Capture an incoming enquiry.
@@ -16,6 +21,10 @@ import { SOURCE_OPTIONS } from '../constants'
  *
  * The server always starts a lead at "New", so there is no stage picker here.
  */
+
+/** Below this there is not enough of a number to look anything up. */
+const MIN_LOOKUP_DIGITS = 7
+
 const INITIAL_VALUES = {
   contactName: '',
   phone: '',
@@ -38,7 +47,7 @@ function validate(values) {
   // Mirrors the server's rule (7–15 digits) so the common mistake is caught
   // without a round trip. The server re-checks regardless.
   const digits = values.phone.replace(/\D/g, '')
-  if (digits.length < 7 || digits.length > 15) {
+  if (digits.length < MIN_LOOKUP_DIGITS || digits.length > 15) {
     errors.phone = 'Enter a contact number with 7 to 15 digits.'
   }
 
@@ -47,6 +56,51 @@ function validate(values) {
   }
 
   return errors
+}
+
+/**
+ * "We have spoken to this number before."
+ *
+ * The schema has carried an index on `phone` from the beginning, with a comment
+ * saying it exists so the intake form can warn about a returning caller without
+ * a table scan — and nothing had ever used it. The number is deliberately not
+ * unique, because the same person genuinely does come back months later as a
+ * fresh enquiry, so this informs rather than blocks: the rep decides whether
+ * they are looking at a new deal or the one already in the pipeline.
+ *
+ * Matching is on digits alone, which is what makes it work at all — the stored
+ * number could be "+94 77 123 4567" and the typed one "0771234567".
+ */
+function DuplicateWarning({ leads }) {
+  return (
+    <div className="rounded-lg bg-warning-soft px-3 py-2.5 text-sm text-warning-strong">
+      <p className="flex items-center gap-2 font-medium">
+        <History className="size-4 shrink-0" aria-hidden="true" />
+        We have spoken to this number before
+      </p>
+
+      <ul className="mt-2 space-y-1.5">
+        {leads.map((lead) => (
+          <li key={lead.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Link
+              to={`/leads/${lead.id}`}
+              className="font-medium underline underline-offset-2 hover:no-underline"
+            >
+              {lead.contactName}
+            </Link>
+            <LeadStatusBadge status={lead.status} size="sm" />
+            <span className="text-xs opacity-80">
+              captured {formatDate(lead.createdAt)}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-2 text-xs opacity-90">
+        Carry on if this is a new enquiry — the same number coming back is normal.
+      </p>
+    </div>
+  )
 }
 
 /**
@@ -59,8 +113,42 @@ export function CaptureLeadModal({ onClose, onCreated }) {
   const [errors, setErrors] = useState({})
   const [submitError, setSubmitError] = useState(null)
   const [isSaving, setIsSaving] = useState(false)
+  /** The last lookup that came back, tagged with the number it was for. */
+  const [lookup, setLookup] = useState({ digits: '', leads: [] })
 
   const { owners } = useLookups({ owners: true })
+
+  const digits = values.phone.replace(/\D/g, '')
+  const lookupDigits = useDebouncedValue(digits, 400)
+
+  useEffect(() => {
+    if (lookupDigits.length < MIN_LOOKUP_DIGITS) return undefined
+
+    let ignore = false
+
+    listLeads({ query: lookupDigits, perPage: 3 })
+      .then((result) => {
+        if (!ignore) setLookup({ digits: lookupDigits, leads: result.data })
+      })
+      // A failed lookup must not disturb the capture. The warning is a
+      // courtesy; recording the enquiry is the job.
+      .catch(() => {
+        if (!ignore) setLookup({ digits: lookupDigits, leads: [] })
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [lookupDigits])
+
+  /**
+   * Only shown while the result still describes the number in the box.
+   *
+   * Deriving this rather than clearing the state means editing the number
+   * hides a stale warning immediately — no effect, no render cascade, and no
+   * window where the form warns about a number the user has already changed.
+   */
+  const duplicates = lookup.digits === digits ? lookup.leads : []
 
   const setValue = (key) => (event) => {
     const { value } = event.target
@@ -101,7 +189,12 @@ export function CaptureLeadModal({ onClose, onCreated }) {
           <Button variant="secondary" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="submit" form="capture-lead-form" disabled={isSaving}>
+          <Button
+            type="submit"
+            form="capture-lead-form"
+            isLoading={isSaving}
+            disabled={isSaving}
+          >
             {isSaving ? 'Saving…' : 'Capture lead'}
           </Button>
         </>
@@ -109,6 +202,8 @@ export function CaptureLeadModal({ onClose, onCreated }) {
     >
       <form id="capture-lead-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
         {submitError && <ApiErrorAlert error={submitError} />}
+
+        {duplicates.length > 0 && <DuplicateWarning leads={duplicates} />}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Input

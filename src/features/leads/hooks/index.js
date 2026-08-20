@@ -1,4 +1,6 @@
+export { useLeadFilters } from './useLeadFilters'
 export { useLeads } from './useLeads'
+export { useLeadBoard } from './useLeadBoard'
 export { useLead } from './useLead'
 export { useLeadStats } from './useLeadStats'
 export { useLookups } from './useLookups'

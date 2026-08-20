@@ -37,7 +37,20 @@ const emptyLine = (key) => ({
   unitPrice: '',
 })
 
-export function useQuotationBuilder({ companySettings, initialQuotation } = {}) {
+/**
+ * @param {object} [options]
+ * @param {object} [options.companySettings]
+ * @param {object} [options.initialQuotation] Seeds an edit.
+ * @param {string} [options.initialCustomerId] Preselects the customer on a new
+ *   quotation. Used by the "Raise a quotation" handoff from a won lead, which
+ *   knows exactly who the quotation is for — asking the user to pick them again
+ *   from a list of every customer is a step with no purpose.
+ */
+export function useQuotationBuilder({
+  companySettings,
+  initialQuotation,
+  initialCustomerId,
+} = {}) {
   const [customers, setCustomers] = useState([])
   const [products, setProducts] = useState([])
   const [isLoadingOptions, setIsLoadingOptions] = useState(true)
@@ -135,6 +148,9 @@ export function useQuotationBuilder({ companySettings, initialQuotation } = {}) 
       // free to edit them for this quotation only.
       setValues((current) => ({
         ...current,
+        // Only ever seeds an empty field, so arriving from a lead preselects
+        // the customer without overwriting one the user has already chosen.
+        customerId: current.customerId || String(initialCustomerId ?? ''),
         paymentTerms: companySettings.paymentTerms ?? '',
         termsConditions: companySettings.termsConditions ?? '',
       }))
