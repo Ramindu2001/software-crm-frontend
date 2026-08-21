@@ -250,8 +250,15 @@ export function useQuotationBuilder({
   // Every setState here sits inside a `.then`, so nothing runs synchronously
   // in the effect body.
   useEffect(() => {
+    // Custom lines have no productId, and `String(undefined)` is the truthy
+    // string "undefined" — which sailed straight through the filter and sent
+    // GET /api/products/undefined on every keystroke in a custom line.
     const wanted = [
-      ...new Set(lines.map((line) => String(line.productId)).filter(Boolean)),
+      ...new Set(
+        lines
+          .filter((line) => !isCustom(line) && line.productId)
+          .map((line) => String(line.productId)),
+      ),
     ].filter((id) => !productCache.current.has(id))
 
     if (wanted.length === 0) return undefined
