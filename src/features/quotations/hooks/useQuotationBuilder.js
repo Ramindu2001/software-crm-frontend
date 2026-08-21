@@ -27,8 +27,16 @@ import { listProducts, getProduct } from '@/features/products/api'
  *      that could set its own total could quote any price.
  */
 
-const emptyLine = (key) => ({
+/**
+ * A line quoting something from the catalogue.
+ *
+ * `kind` drives the form only; it is never sent. On the wire the presence of a
+ * product id is what tells the two apart, so there is one source of truth
+ * rather than a flag that could contradict the ids beside it.
+ */
+const emptyCatalogueLine = (key) => ({
   key,
+  kind: 'catalogue',
   productId: '',
   packageId: '',
   plan: 'Annual',
@@ -36,6 +44,33 @@ const emptyLine = (key) => ({
   /** '' means "use the package price"; a number is a deliberate override. */
   unitPrice: '',
 })
+
+/**
+ * A line describing work the catalogue has no entry for.
+ *
+ * Everything it needs is on the line itself, because there is nothing to
+ * resolve it against — including the price, which for a catalogue line would be
+ * looked up and here has to be stated.
+ */
+const emptyCustomLine = (key) => ({
+  key,
+  kind: 'custom',
+  productName: '',
+  description: '',
+  /** A free-text label like "Phase 1" — not a package id. */
+  packageName: '',
+  plan: 'Annual',
+  quantity: 1,
+  unitPrice: '',
+  installationFee: '',
+  /** Bullets for the document; the catalogue equivalent is package features. */
+  features: [],
+})
+
+const emptyLine = (key, kind = 'catalogue') =>
+  kind === 'custom' ? emptyCustomLine(key) : emptyCatalogueLine(key)
+
+const isCustom = (line) => line.kind === 'custom'
 
 /**
  * @param {object} [options]
@@ -61,7 +96,22 @@ export function useQuotationBuilder({
   const [loadedProducts, setLoadedProducts] = useState(() => new Map())
 
   const [values, setValues] = useState(() => ({
+    /**
+     * 'existing' picks somebody from the directory; 'new' quotes a prospect
+     * whose details live on the document alone.
+     *
+     * Defaults to 'existing' because most quotations go to customers already on
+     * file, and because it is the mode that cannot create anything by accident.
+     */
+    customerMode: 'existing',
     customerId: '',
+    newCustomer: {
+      companyName: '',
+      contactPerson: '',
+      email: '',
+      phone: '',
+      address: '',
+    },
     discountPercent: 0,
     paymentTerms: '',
     termsConditions: '',
@@ -119,28 +169,61 @@ export function useQuotationBuilder({
     setSeededFrom(seedSource)
 
     if (initialQuotation) {
+      // A quotation raised for a prospect reopens in 'new' mode with its own
+      // snapshot in the fields — editing it must not silently demand that the
+      // user now pick somebody from the directory instead.
+      const isProspect = initialQuotation.isProspect
+
       setValues({
+        customerMode: isProspect ? 'new' : 'existing',
         customerId: String(initialQuotation.customerId ?? ''),
+        newCustomer: {
+          companyName: isProspect ? (initialQuotation.customer?.name ?? '') : '',
+          contactPerson: isProspect ? (initialQuotation.customer?.contactPerson ?? '') : '',
+          email: isProspect ? (initialQuotation.customer?.email ?? '') : '',
+          phone: isProspect ? (initialQuotation.customer?.phone ?? '') : '',
+          address: isProspect ? (initialQuotation.customer?.address ?? '') : '',
+        },
         discountPercent: initialQuotation.discountPercent ?? 0,
         paymentTerms: initialQuotation.paymentTerms ?? '',
         termsConditions: initialQuotation.termsConditions ?? '',
         notes: initialQuotation.notes ?? '',
       })
+
       setLines(
-        initialQuotation.items.map((item, index) => ({
-          key: index + 1,
-          productId: String(item.productId ?? ''),
-          packageId: String(item.packageId ?? ''),
-          plan: item.plan,
-          quantity: item.quantity,
-          // An override is only an override if it differs from the package
-          // price for that plan; otherwise leave it blank so it keeps tracking.
-          unitPrice:
-            item.unitPrice ===
-            (item.plan === 'Annual' ? item.firstYearFee : item.monthlyPrice)
-              ? ''
-              : item.unitPrice,
-        })),
+        initialQuotation.items.map((item, index) =>
+          item.isCustom
+            ? {
+                key: index + 1,
+                kind: 'custom',
+                productName: item.productName ?? '',
+                description: item.description ?? '',
+                packageName: item.packageName ?? '',
+                plan: item.plan,
+                quantity: item.quantity,
+                // Always explicit on a custom line — there is no list price for
+                // it to track, so it is never "left blank to follow the package".
+                unitPrice: item.unitPrice,
+                installationFee: item.installationFee || '',
+                features: [...(item.features ?? [])],
+              }
+            : {
+                key: index + 1,
+                kind: 'catalogue',
+                productId: String(item.productId ?? ''),
+                packageId: String(item.packageId ?? ''),
+                plan: item.plan,
+                quantity: item.quantity,
+                // An override is only an override if it differs from the
+                // package price for that plan; otherwise leave it blank so it
+                // keeps tracking.
+                unitPrice:
+                  item.unitPrice ===
+                  (item.plan === 'Annual' ? item.firstYearFee : item.monthlyPrice)
+                    ? ''
+                    : item.unitPrice,
+              },
+        ),
       )
       setNextKey(initialQuotation.items.length + 1)
     } else {
@@ -220,9 +303,13 @@ export function useQuotationBuilder({
     [getProductDetail],
   )
 
-  /** List price for the chosen plan, before any override. */
+  /**
+   * List price for the chosen plan, before any override.
+   * Zero for a custom line — there is no catalogue price to look up.
+   */
   const listPriceFor = useCallback(
     (line) => {
+      if (isCustom(line)) return 0
       const pkg = getPackage(line)
       if (!pkg) return 0
       return line.plan === 'Annual' ? pkg.first_year_price : pkg.monthly_price
@@ -232,11 +319,30 @@ export function useQuotationBuilder({
 
   /** What this line actually charges — the override if set, else list price. */
   const effectivePrice = useCallback(
-    (line) =>
-      line.unitPrice === '' || line.unitPrice === null
+    (line) => {
+      // A custom line's price is not an override of anything; it is the price.
+      if (isCustom(line)) return Number(line.unitPrice) || 0
+
+      return line.unitPrice === '' || line.unitPrice === null
         ? listPriceFor(line)
-        : Number(line.unitPrice) || 0,
+        : Number(line.unitPrice) || 0
+    },
     [listPriceFor],
+  )
+
+  /**
+   * The one-off installation charge on a line.
+   *
+   * Charged once per line regardless of quantity — a site installation, not a
+   * per-licence cost. A catalogue line inherits it from the package; a custom
+   * line states its own.
+   */
+  const installationFeeFor = useCallback(
+    (line) => {
+      if (isCustom(line)) return Number(line.installationFee) || 0
+      return Number(getPackage(line)?.installation_fee ?? 0)
+    },
+    [getPackage],
   )
 
   // ── Line editing ───────────────────────────────────────
@@ -244,10 +350,21 @@ export function useQuotationBuilder({
     setValues((current) => ({ ...current, [key]: value }))
   }, [])
 
-  const addLine = useCallback(() => {
-    setLines((current) => [...current, emptyLine(nextKey)])
-    setNextKey((key) => key + 1)
-  }, [nextKey])
+  /** Set one field of the prospect block without flattening the rest. */
+  const setNewCustomerValue = useCallback((key, value) => {
+    setValues((current) => ({
+      ...current,
+      newCustomer: { ...current.newCustomer, [key]: value },
+    }))
+  }, [])
+
+  const addLine = useCallback(
+    (kind = 'catalogue') => {
+      setLines((current) => [...current, emptyLine(nextKey, kind)])
+      setNextKey((key) => key + 1)
+    },
+    [nextKey],
+  )
 
   const removeLine = useCallback((key) => {
     // The API requires at least one line item.
@@ -260,6 +377,12 @@ export function useQuotationBuilder({
         if (line.key !== key) return line
 
         const next = { ...line, ...patch }
+
+        // A custom line has no catalogue references to invalidate, and its
+        // price is not an override of anything — so none of the resets below
+        // apply to it. Clearing unitPrice when its plan changed would silently
+        // wipe the only price it has.
+        if (isCustom(line)) return next
 
         // Changing the product invalidates the package and any override priced
         // against it — silently keeping either would quote one product at
@@ -284,25 +407,51 @@ export function useQuotationBuilder({
 
   // ── Preview totals ─────────────────────────────────────
   const totals = useMemo(() => {
-    const totalAmount = lines.reduce(
+    const serviceTotal = lines.reduce(
       (sum, line) => sum + effectivePrice(line) * (Number(line.quantity) || 0),
       0,
     )
+    /**
+     * Installation was previously left out of this preview entirely, so the
+     * running total the user saw was lower than the figure the server came back
+     * with — on exactly the screen whose job is to show what is being charged.
+     * Counted here so the preview and the document agree.
+     */
+    const installationTotal = lines.reduce((sum, line) => sum + installationFeeFor(line), 0)
+
+    const totalAmount = serviceTotal + installationTotal
     const percent = Number(values.discountPercent) || 0
     const discount = (totalAmount * percent) / 100
 
     return {
+      serviceTotal,
+      installationTotal,
       totalAmount,
       discountPercent: percent,
       discount,
       finalAmount: Math.max(0, totalAmount - discount),
     }
-  }, [lines, values.discountPercent, effectivePrice])
+  }, [lines, values.discountPercent, effectivePrice, installationFeeFor])
 
   /** Client-side mirror of the server's rules, to catch mistakes early. */
   const validate = useCallback(() => {
     const errors = {}
-    if (!values.customerId) errors.customerId = 'Select a customer.'
+
+    if (values.customerMode === 'new') {
+      // Only the company name is demanded, matching the server. A quotation is
+      // often raised off a phone call where the company name is the one thing
+      // you have — insisting on an email would either block the quote or teach
+      // people to invent one.
+      if (!values.newCustomer.companyName.trim()) {
+        errors.newCustomerName = 'Enter the company or person this is quoted to.'
+      }
+      const email = values.newCustomer.email.trim()
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+        errors.newCustomerEmail = 'Enter a valid email address, or leave it blank.'
+      }
+    } else if (!values.customerId) {
+      errors.customerId = 'Select a customer.'
+    }
 
     const percent = Number(values.discountPercent)
     if (Number.isNaN(percent) || percent < 0 || percent > 100) {
@@ -311,6 +460,27 @@ export function useQuotationBuilder({
 
     const lineErrors = lines.map((line) => {
       const error = {}
+
+      const quantity = Number(line.quantity)
+      if (!Number.isInteger(quantity) || quantity < 1) error.quantity = 'Min 1'
+
+      if (isCustom(line)) {
+        if (line.productName.trim().length < 2) {
+          error.productName = 'Describe what is being quoted'
+        }
+        // Required rather than optional: nothing else can price this line, and
+        // a blank falling back to zero would quote bespoke work for free.
+        if (line.unitPrice === '' || line.unitPrice === null) {
+          error.unitPrice = 'Required'
+        } else if (Number(line.unitPrice) < 0) {
+          error.unitPrice = 'Cannot be negative'
+        }
+        if (line.installationFee !== '' && Number(line.installationFee) < 0) {
+          error.installationFee = 'Cannot be negative'
+        }
+        return error
+      }
+
       if (!line.productId) error.productId = 'Required'
 
       if (!line.packageId) {
@@ -325,9 +495,6 @@ export function useQuotationBuilder({
           error.packageId = 'This package no longer exists — choose another'
         }
       }
-
-      const quantity = Number(line.quantity)
-      if (!Number.isInteger(quantity) || quantity < 1) error.quantity = 'Min 1'
 
       if (line.unitPrice !== '' && Number(line.unitPrice) < 0) {
         error.unitPrice = 'Cannot be negative'
@@ -347,18 +514,37 @@ export function useQuotationBuilder({
   /** The payload for POST/PUT — server field names are applied in api/. */
   const toPayload = useCallback(
     () => ({
+      customerMode: values.customerMode,
       customerId: values.customerId,
+      newCustomer: values.newCustomer,
       discountPercent: values.discountPercent,
       paymentTerms: values.paymentTerms,
       termsConditions: values.termsConditions,
       notes: values.notes,
-      items: lines.map((line) => ({
-        productId: line.productId,
-        packageId: line.packageId,
-        plan: line.plan,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-      })),
+      // `kind` travels as far as api/, which reads it to choose a shape and
+      // then drops it — the server infers the same thing from the ids.
+      items: lines.map((line) =>
+        isCustom(line)
+          ? {
+              kind: 'custom',
+              productName: line.productName,
+              description: line.description,
+              packageName: line.packageName,
+              plan: line.plan,
+              quantity: line.quantity,
+              unitPrice: line.unitPrice,
+              installationFee: line.installationFee,
+              features: line.features,
+            }
+          : {
+              kind: 'catalogue',
+              productId: line.productId,
+              packageId: line.packageId,
+              plan: line.plan,
+              quantity: line.quantity,
+              unitPrice: line.unitPrice,
+            },
+      ),
     }),
     [values, lines],
   )
@@ -369,6 +555,7 @@ export function useQuotationBuilder({
     isLoadingOptions,
     values,
     setValue,
+    setNewCustomerValue,
     lines,
     addLine,
     removeLine,
@@ -377,6 +564,7 @@ export function useQuotationBuilder({
     getPackage,
     listPriceFor,
     effectivePrice,
+    installationFeeFor,
     totals,
     validate,
     toPayload,

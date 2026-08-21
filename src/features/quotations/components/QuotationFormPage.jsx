@@ -1,17 +1,14 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, ShieldAlert, Trash2, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, Plus, ShieldAlert, TriangleAlert, Wrench } from 'lucide-react'
 import { ApiErrorAlert, EmptyState, PageHeader, RouteFallback } from '@/components/common'
 import {
-  Badge,
   Button,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   Input,
-  MoneyInput,
-  Select,
   Textarea,
 } from '@/components/ui'
 import { PERMISSIONS, useAuth } from '@/features/auth'
@@ -20,7 +17,9 @@ import { formatRupees } from '@/lib/format'
 import { toast } from '@/lib/toastStore'
 import { createQuotation, updateQuotation } from '../api'
 import { useQuotation, useQuotationBuilder } from '../hooks'
-import { isEditable, PLAN, PLAN_OPTIONS } from '../constants'
+import { isEditable } from '../constants'
+import { QuotationCustomerSection } from './QuotationCustomerSection'
+import { QuotationLineItem } from './QuotationLineItem'
 
 /**
  * Build or edit a quotation.
@@ -182,186 +181,49 @@ export function QuotationFormPage() {
         <div className="grid gap-5 lg:col-span-2">
           <ApiErrorAlert error={submitError} fallback="Could not save the quotation." />
 
-          {/* ── Customer ──────────────────────────────── */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Customer</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Select
-                label="Customer"
-                value={builder.values.customerId}
-                onChange={(event) => builder.setValue('customerId', event.target.value)}
-                options={builder.customers}
-                error={errors.customerId}
-                disabled={builder.isLoadingOptions}
-                placeholder={
-                  builder.isLoadingOptions ? 'Loading…' : 'Select a customer'
-                }
-                required
-              />
-              <p className="mt-1.5 text-xs text-ink-muted">
-                Their contact person, phone, address and email are pulled onto the
-                quotation automatically.
-              </p>
-            </CardContent>
-          </Card>
+          <QuotationCustomerSection builder={builder} errors={errors} />
 
           {/* ── Line items ────────────────────────────── */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Products &amp; packages</CardTitle>
-              <Button type="button" size="sm" variant="secondary" onClick={builder.addLine}>
-                <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                Add item
-              </Button>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+              <CardTitle>What you&apos;re quoting</CardTitle>
+              <span className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => builder.addLine('catalogue')}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  From catalogue
+                </Button>
+                {/* Equal billing with the catalogue button on purpose: bespoke
+                    work is a large share of what gets sold here, and burying it
+                    behind a menu would say otherwise. */}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => builder.addLine('custom')}
+                >
+                  <Wrench className="size-4" aria-hidden="true" />
+                  Custom item
+                </Button>
+              </span>
             </CardHeader>
 
             <CardContent className="grid gap-4">
-              {builder.lines.map((line, index) => {
-                const product = builder.getProductDetail(line.productId)
-                const pkg = builder.getPackage(line)
-                const lineError = lineErrors[index] ?? {}
-                const listPrice = builder.listPriceFor(line)
-                const price = builder.effectivePrice(line)
-
-                const packageOptions = (product?.packages ?? []).map((entry) => ({
-                  value: String(entry.id),
-                  label: entry.name,
-                }))
-
-                return (
-                  <div
-                    key={line.key}
-                    className="relative rounded-lg border border-line bg-sunken/40 p-3"
-                  >
-                    <div className="mb-3 flex items-center justify-between">
-                      <span className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
-                        Item {index + 1}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => builder.removeLine(line.key)}
-                        disabled={builder.lines.length === 1}
-                        className="rounded p-1.5 text-ink-subtle transition-colors hover:bg-danger-soft hover:text-danger-strong disabled:opacity-40"
-                        aria-label={`Remove item ${index + 1}`}
-                      >
-                        <Trash2 className="size-4" aria-hidden="true" />
-                      </button>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Select
-                        label="Product / service"
-                        value={line.productId}
-                        onChange={(event) =>
-                          builder.updateLine(line.key, { productId: event.target.value })
-                        }
-                        options={builder.products}
-                        error={lineError.productId}
-                        disabled={builder.isLoadingOptions}
-                        placeholder="Select a product"
-                      />
-
-                      <Select
-                        label="Package"
-                        value={line.packageId}
-                        onChange={(event) =>
-                          builder.updateLine(line.key, { packageId: event.target.value })
-                        }
-                        options={packageOptions}
-                        error={lineError.packageId}
-                        // Nothing to choose until the product's packages land.
-                        disabled={!product}
-                        placeholder={
-                          !line.productId
-                            ? 'Choose a product first'
-                            : !product
-                              ? 'Loading packages…'
-                              : 'Select a package'
-                        }
-                      />
-
-                      <Select
-                        label="Plan"
-                        value={line.plan}
-                        onChange={(event) =>
-                          builder.updateLine(line.key, { plan: event.target.value })
-                        }
-                        options={PLAN_OPTIONS}
-                        hint={PLAN[line.plan]?.description}
-                      />
-
-                      <Input
-                        label="Quantity"
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={line.quantity}
-                        onChange={(event) =>
-                          builder.updateLine(line.key, { quantity: event.target.value })
-                        }
-                        error={lineError.quantity}
-                      />
-
-                      <MoneyInput
-                        label="Unit price"
-                        value={line.unitPrice}
-                        onChange={(event) =>
-                          builder.updateLine(line.key, { unitPrice: event.target.value })
-                        }
-                        error={lineError.unitPrice}
-                        placeholder={pkg ? String(listPrice) : ''}
-                        // Blank tracks the package price; a value is an
-                        // explicit negotiated override.
-                        hint={
-                          pkg
-                            ? `Package price ${formatRupees(listPrice)} — leave blank to use it`
-                            : 'Set by the package once one is chosen'
-                        }
-                        wrapperClassName="sm:col-span-2"
-                      />
-                    </div>
-
-                    {/* What the customer will see for this line, loaded from
-                        the package the moment it is chosen. */}
-                    {pkg && (
-                      <div className="mt-3 grid gap-2 rounded-md border border-line bg-surface p-3 text-xs">
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                          <span className="text-ink-muted">
-                            Line total{' '}
-                            <span className="font-medium text-ink tabular-nums">
-                              {formatRupees(price * (Number(line.quantity) || 0))}
-                            </span>
-                          </span>
-                          <span className="text-ink-muted">
-                            Renewal{' '}
-                            <span className="font-medium text-ink tabular-nums">
-                              {formatRupees(pkg.second_year_price)}
-                            </span>
-                          </span>
-                          <span className="text-ink-muted">
-                            Monthly{' '}
-                            <span className="font-medium text-ink tabular-nums">
-                              {formatRupees(pkg.monthly_price)}
-                            </span>
-                          </span>
-                        </div>
-
-                        {pkg.features?.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {pkg.features.map((feature) => (
-                              <Badge key={feature} tone="neutral" size="sm">
-                                {feature}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+              {builder.lines.map((line, index) => (
+                <QuotationLineItem
+                  key={line.key}
+                  line={line}
+                  index={index}
+                  lineError={lineErrors[index] ?? {}}
+                  builder={builder}
+                  // The API requires at least one line item.
+                  canRemove={builder.lines.length > 1}
+                />
+              ))}
             </CardContent>
           </Card>
 
@@ -422,6 +284,24 @@ export function QuotationFormPage() {
               />
 
               <dl className="grid gap-1.5 border-t border-line pt-3 text-sm">
+                {/* Broken out only when there is one, so a quotation with no
+                    setup charge is not padded with a zero row. */}
+                {totals.installationTotal > 0 && (
+                  <>
+                    <div className="flex justify-between">
+                      <dt className="text-ink-muted">Recurring</dt>
+                      <dd className="tabular-nums text-ink">
+                        {formatRupees(totals.serviceTotal)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt className="text-ink-muted">One-off setup</dt>
+                      <dd className="tabular-nums text-ink">
+                        {formatRupees(totals.installationTotal)}
+                      </dd>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between">
                   <dt className="text-ink-muted">Total</dt>
                   <dd className="tabular-nums text-ink">

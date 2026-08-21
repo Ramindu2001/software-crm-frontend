@@ -60,16 +60,51 @@ function formatReference(createdAt, id) {
   return `${yy}${mm}${dd}-${String(id).padStart(3, '0')}`
 }
 
-function mapListItem(quotation) {
+/**
+ * The customer block a stored quotation renders from.
+ *
+ * Mirrors the server: the details are snapshotted onto the quotation when it is
+ * raised, so a document never rewrites itself when a customer's record changes.
+ * Seeded fixtures predate the snapshot and carry only a `customerId`, so they
+ * fall back to the directory — which is exactly what migration 006 does to
+ * backfill the real table.
+ */
+function customerSnapshot(quotation) {
+  if (quotation.customerName !== undefined) {
+    return {
+      id: quotation.customerId ?? null,
+      name: quotation.customerName,
+      contactPerson: quotation.customerContactPerson ?? '',
+      email: quotation.customerEmail ?? '',
+      phone: quotation.customerPhone ?? '',
+      address: quotation.customerAddress ?? '',
+    }
+  }
+
   const customer = customerById(quotation.customerId)
+  return {
+    id: customer?.id ?? null,
+    name: customer?.company_name ?? 'Unknown',
+    contactPerson: customer?.contact_person ?? '',
+    email: customer?.email ?? '',
+    phone: customer?.phone ?? '',
+    address: customer?.address ?? '',
+  }
+}
+
+function mapListItem(quotation) {
+  const customer = customerSnapshot(quotation)
   return {
     id: formatReference(quotation.createdAt, quotation.id),
     quotationId: quotation.id,
-    customerId: quotation.customerId,
-    customerName: customer?.company_name ?? 'Unknown',
-    contactPerson: customer?.contact_person ?? '',
+    customerId: customer.id,
+    customerName: customer.name,
+    contactPerson: customer.contactPerson,
+    // Raised for somebody who is not in the customer directory.
+    isProspect: customer.id === null,
     preparedBy: quotation.preparedByName ?? '',
     totalAmount: quotation.totalAmount,
+    installationTotal: quotation.installationTotal ?? 0,
     discount: quotation.discount,
     discountPercent: quotation.discountPercent ?? 0,
     finalAmount: quotation.finalAmount,
@@ -81,19 +116,11 @@ function mapListItem(quotation) {
 }
 
 async function mapDetail(quotation) {
-  const customer = customerById(quotation.customerId)
   const company = await getCompanySettings()
 
   return {
     ...mapListItem(quotation),
-    customer: {
-      id: customer?.id ?? null,
-      name: customer?.company_name ?? 'Unknown',
-      contactPerson: customer?.contact_person ?? '',
-      email: customer?.email ?? '',
-      phone: customer?.phone ?? '',
-      address: customer?.address ?? '',
-    },
+    customer: customerSnapshot(quotation),
     // Live, matching the API — the letterhead is never snapshotted.
     company: {
       companyName: company.companyName,
@@ -117,6 +144,50 @@ async function mapDetail(quotation) {
  */
 function buildLine(rawItem, index) {
   const at = `items[${index}]`
+
+  /**
+   * A custom line describes work the catalogue has no entry for, so there is
+   * nothing to resolve and nothing to copy — everything it renders arrives on
+   * the request. Mirrors the server, where the absent product id is the whole
+   * discriminator.
+   */
+  if (rawItem.kind === 'custom') {
+    const name = rawItem.productName?.trim()
+    if (!name) throw validationError([`${at}: product_name is required`])
+
+    const unitPrice = Number(rawItem.unitPrice)
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+      throw validationError([`${at}: unit_price is required`])
+    }
+
+    const quantity = Number(rawItem.quantity) || 1
+
+    return {
+      id: Math.floor(Math.random() * 1e9),
+      productId: null,
+      productName: name,
+      isCustom: true,
+      description: rawItem.description?.trim() ?? '',
+      packageId: null,
+      packageName: rawItem.packageName?.trim() || null,
+      plan: rawItem.plan || 'Annual',
+      quantity,
+      unitPrice,
+      totalPrice: Number((unitPrice * quantity).toFixed(2)),
+      installationFee: Number(rawItem.installationFee) || 0,
+      // Null, not zero: "there is nothing to renew" is a different statement
+      // from "it renews at nothing", and the document distinguishes them.
+      firstYearFee: null,
+      renewalFee: null,
+      monthlyPrice: null,
+      features: (rawItem.features ?? []).map((f) => f.trim()).filter(Boolean),
+      // Requirements describe what a product needs; bespoke work states its
+      // scope in `description` instead.
+      basicRequirements: [],
+      softwareRequirements: [],
+    }
+  }
+
   const product = productById(rawItem.productId)
   if (!product) throw validationError([`${at}: product_id ${rawItem.productId} does not exist`])
 
@@ -138,12 +209,15 @@ function buildLine(rawItem, index) {
     id: Math.floor(Math.random() * 1e9),
     productId: product.id,
     productName: product.name,
+    isCustom: false,
+    description: '',
     packageId: pkg.id,
     packageName: pkg.name,
     plan: rawItem.plan,
     quantity,
     unitPrice,
     totalPrice: Number((unitPrice * quantity).toFixed(2)),
+    installationFee: Number(pkg.installation_fee ?? 0),
     firstYearFee: Number(pkg.first_year_price),
     renewalFee: Number(pkg.second_year_price),
     monthlyPrice: Number(pkg.monthly_price),
@@ -163,15 +237,27 @@ function validationError(messages) {
 
 function priceQuotation(input) {
   const items = (input.items ?? []).map(buildLine)
-  const totalAmount = Number(
-    items.reduce((sum, item) => sum + item.totalPrice, 0).toFixed(2),
-  )
+
+  const serviceTotal = items.reduce((sum, item) => sum + item.totalPrice, 0)
+  /**
+   * Charged once per line regardless of quantity — a one-time site
+   * installation, not a per-licence cost.
+   *
+   * This used to be omitted from the mock's totals altogether, which quietly
+   * made every mock quotation cheaper than the same payload against the real
+   * API. Included now so the two agree, which is the only reason this file
+   * exists.
+   */
+  const installationTotal = items.reduce((sum, item) => sum + (item.installationFee ?? 0), 0)
+
+  const totalAmount = Number((serviceTotal + installationTotal).toFixed(2))
   const discountPercent = Number(input.discountPercent) || 0
   const discount = Number(((totalAmount * discountPercent) / 100).toFixed(2))
 
   return {
     items,
     totalAmount,
+    installationTotal: Number(installationTotal.toFixed(2)),
     discountPercent,
     discount,
     finalAmount: Number((totalAmount - discount).toFixed(2)),
@@ -232,14 +318,47 @@ export async function getQuotation(id) {
   return mapDetail(quotation)
 }
 
-export async function createQuotation(input) {
-  await delay(460)
+/**
+ * Resolve the customer block to store, from either mode.
+ *
+ * A customer on file is authoritative — their record supplies the snapshot, so
+ * the directory and the document cannot disagree. A prospect supplies their own
+ * details and gets no `customerId` at all.
+ */
+function resolveCustomerFields(input) {
+  if (input.customerMode === 'new') {
+    const name = input.newCustomer?.companyName?.trim()
+    if (!name) throw validationError(['customer.company_name is required'])
+
+    return {
+      customerId: null,
+      customerName: name,
+      customerContactPerson: input.newCustomer?.contactPerson?.trim() ?? '',
+      customerEmail: input.newCustomer?.email?.trim() ?? '',
+      customerPhone: input.newCustomer?.phone?.trim() ?? '',
+      customerAddress: input.newCustomer?.address?.trim() ?? '',
+    }
+  }
 
   const customer = customerById(input.customerId)
   if (!customer) {
     throw validationError([`customer_id ${input.customerId} does not exist`])
   }
 
+  return {
+    customerId: customer.id,
+    customerName: customer.company_name,
+    customerContactPerson: customer.contact_person ?? '',
+    customerEmail: customer.email ?? '',
+    customerPhone: customer.phone ?? '',
+    customerAddress: customer.address ?? '',
+  }
+}
+
+export async function createQuotation(input) {
+  await delay(460)
+
+  const customerFields = resolveCustomerFields(input)
   const priced = priceQuotation(input)
   const company = await getCompanySettings()
   const createdAt = new Date()
@@ -249,7 +368,7 @@ export async function createQuotation(input) {
 
   const quotation = {
     id: getStore().reduce((max, entry) => Math.max(max, entry.id), 0) + 1,
-    customerId: Number(input.customerId),
+    ...customerFields,
     // The real API takes this from the bearer token; the mock reads the
     // session the auth mock wrote, which is the same fact by another route.
     preparedByName: currentUserName(),
@@ -279,10 +398,11 @@ export async function updateQuotation(id, input) {
     )
   }
 
+  const customerFields = resolveCustomerFields(input)
   const priced = priceQuotation(input)
   const updated = {
     ...existing,
-    customerId: Number(input.customerId),
+    ...customerFields,
     ...priced,
     paymentTerms: input.paymentTerms?.trim() ?? '',
     termsConditions: input.termsConditions?.trim() ?? '',
@@ -292,6 +412,45 @@ export async function updateQuotation(id, input) {
   store = getStore().map((quotation) =>
     quotation.id === existing.id ? updated : quotation,
   )
+  return mapDetail(updated)
+}
+
+/**
+ * Put a prospect on file and link the quotation to them.
+ *
+ * The mock cannot write to the customers fixture (it is a module constant that
+ * other features read), so a linked id is synthesised while the snapshot the
+ * document renders from is left exactly as it was — which is the behaviour that
+ * matters here, and the same rule the server follows: linking fills in the
+ * pointer, it never rewrites what the document said.
+ */
+export async function linkQuotationCustomer(id, input = {}) {
+  await delay(320)
+
+  const existing = findQuotation(id)
+  if (!existing) throw new NotFoundError(`Quotation ${id} was not found.`)
+
+  const snapshot = customerSnapshot(existing)
+  if (snapshot.id !== null) {
+    throw new NotEditableError(
+      `Quotation ${formatReference(existing.createdAt, existing.id)} is already ` +
+        `linked to customer ${snapshot.id}.`,
+    )
+  }
+
+  if (!input.customerId && !(input.email ?? snapshot.email)) {
+    throw validationError(['email is required'])
+  }
+
+  const linkedId = input.customerId
+    ? Number(input.customerId)
+    : MOCK_CUSTOMERS.reduce((max, entry) => Math.max(max, entry.id), 0) + 1
+
+  const updated = { ...existing, customerId: linkedId }
+  store = getStore().map((quotation) =>
+    quotation.id === existing.id ? updated : quotation,
+  )
+
   return mapDetail(updated)
 }
 

@@ -73,8 +73,18 @@ function QuotationRow({ quotation, canEdit }) {
       </td>
 
       <td className="px-4 py-3">
-        <span className="block truncate text-sm font-medium text-ink">
-          {quotation.customerName}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-sm font-medium text-ink">
+            {quotation.customerName}
+          </span>
+          {/* Quoted to somebody outside the customer directory. Worth flagging
+              in the list: these are the ones that need a customer adding before
+              they can become an agreement. */}
+          {quotation.isProspect && (
+            <Badge tone="info" size="sm">
+              Not a customer
+            </Badge>
+          )}
         </span>
         <span className="block truncate text-xs text-ink-subtle">
           {quotation.itemsCount} {quotation.itemsCount === 1 ? 'item' : 'items'}

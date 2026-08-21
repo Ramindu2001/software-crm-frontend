@@ -13,6 +13,7 @@ import {
   QUOTATION_STATUS_OPTIONS,
 } from '../constants'
 import { QuotationDocument } from './QuotationDocument'
+import { QuotationProspectBanner } from './QuotationProspectBanner'
 
 /**
  * A single quotation: the document itself, plus the actions around it.
@@ -134,6 +135,19 @@ export function QuotationDetailPage() {
             </span>
           )}
         </div>
+
+        {/* Renders nothing unless the quotation was raised for somebody outside
+            the customer directory. */}
+        <QuotationProspectBanner
+          quotation={quotation}
+          canEdit={canEdit}
+          onLinked={(updated) => {
+            applyQuotation(updated)
+            toast.success('Customer added', {
+              description: `${updated.customer.name} is now in your customer list.`,
+            })
+          }}
+        />
       </div>
 
       {/* The document. Bounded and scrollable on screen so an A4 sheet does

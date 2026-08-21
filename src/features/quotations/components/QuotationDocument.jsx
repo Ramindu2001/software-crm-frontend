@@ -59,6 +59,22 @@ export function QuotationDocument({ quotation }) {
   const softwareRequirements = dedupe(items.flatMap((item) => item.softwareRequirements))
   const features = dedupe(items.flatMap((item) => item.features))
 
+  /**
+   * Lines with a recurring rate to quote.
+   *
+   * Custom work is delivered once, so it has no renewal or monthly figure and
+   * belongs nowhere in a subscription table.
+   */
+  const subscriptionItems = items.filter((item) => !item.isCustom)
+
+  // Without this the section renders as an empty bordered box on a quotation
+  // that is entirely custom work with no notes.
+  const hasPricingSection =
+    subscriptionItems.length > 0 ||
+    basicRequirements.length > 0 ||
+    softwareRequirements.length > 0 ||
+    Boolean(quotation.notes)
+
   return (
     <article
       // 210mm is A4 width; the padding matches the @page margin so the preview
@@ -145,15 +161,28 @@ export function QuotationDocument({ quotation }) {
                 <td className="border border-[#111] px-2 py-1 align-top">
                   {item.productName}
                   {item.packageName && ` — ${item.packageName}`}
-                  <span className="text-[#555]">
-                    {' '}
-                    ({item.plan === 'Annual' ? 'Annual' : 'Monthly'})
-                  </span>
+                  {/* A one-off build has no billing period to state, and
+                      printing "(Annual)" beside it would imply a recurrence
+                      that does not exist. */}
+                  {!item.isCustom && (
+                    <span className="text-[#555]">
+                      {' '}
+                      ({item.plan === 'Annual' ? 'Annual' : 'Monthly'})
+                    </span>
+                  )}
                   {item.quantity > 1 && (
                     <span className="text-[#555]">
                       {' '}
                       × {item.quantity} @ {formatRupees(item.unitPrice)}
                     </span>
+                  )}
+                  {/* Where bespoke work explains itself. A catalogue line needs
+                      no equivalent: its features and requirements are printed
+                      in their own sections below. */}
+                  {item.description && (
+                    <p className="mt-0.5 text-[10px] leading-snug whitespace-pre-line text-[#555]">
+                      {item.description}
+                    </p>
                   )}
                 </td>
                 <td className="border border-[#111] px-2 py-1 text-right tabular-nums">
@@ -161,6 +190,20 @@ export function QuotationDocument({ quotation }) {
                 </td>
               </tr>
             ))}
+
+            {/* The total below has always included setup fees while the rows
+                above never showed them, so the column visibly failed to add up
+                whenever one was charged. Stated as its own row instead. */}
+            {quotation.installationTotal > 0 && (
+              <tr>
+                <td className="border border-[#111] px-2 py-1 align-top">
+                  One-off setup / installation
+                </td>
+                <td className="border border-[#111] px-2 py-1 text-right tabular-nums">
+                  {formatRupees(quotation.installationTotal)}
+                </td>
+              </tr>
+            )}
 
             <tr>
               <td className="px-2 py-1 text-right">Total:</td>
@@ -196,8 +239,18 @@ export function QuotationDocument({ quotation }) {
         </section>
       )}
 
-      {/* ── Package / subscription pricing ───────────────── */}
+      {/* ── Package / subscription pricing, requirements, notes ── */}
+      {hasPricingSection && (
       <section className="mt-3 border border-[#111] p-3">
+        {/* Catalogue lines only.
+
+            This table is about what recurs. A custom line has no renewal or
+            monthly rate — those columns are null on purpose — and rendering one
+            here would print "Rs. 0.00" against a bespoke build, which reads as
+            a promise to renew it for nothing rather than as "there is nothing
+            to renew". A quotation for custom work alone drops the table but
+            keeps the notes below it. */}
+        {subscriptionItems.length > 0 && (
         <table className="w-full border-collapse text-[11px]">
           <thead>
             <tr>
@@ -214,7 +267,7 @@ export function QuotationDocument({ quotation }) {
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
+            {subscriptionItems.map((item) => (
               <tr key={item.id}>
                 <td className="border border-[#111] px-2 py-1 text-center">
                   {item.packageName || '—'}
@@ -237,6 +290,7 @@ export function QuotationDocument({ quotation }) {
             ))}
           </tbody>
         </table>
+        )}
 
         {(basicRequirements.length > 0 || softwareRequirements.length > 0) && (
           <div className="mt-3 grid grid-cols-2 gap-4 text-[10px] leading-snug">
@@ -269,6 +323,7 @@ export function QuotationDocument({ quotation }) {
           </p>
         )}
       </section>
+      )}
 
       {/* ── Payment terms ────────────────────────────────── */}
       {quotation.paymentTerms && (

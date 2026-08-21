@@ -19,6 +19,14 @@ export const createQuotation = impl.createQuotation
 /** Pending quotations only; anything else is refused with NotEditableError. */
 export const updateQuotation = impl.updateQuotation
 export const updateQuotationStatus = impl.updateQuotationStatus
+/**
+ * Put a prospect on file, and link the quotation to them.
+ *
+ * A quotation may be addressed to somebody outside the customer directory; an
+ * agreement may not, because every subscription and invoice below it is keyed
+ * by customer. This is the step between the two.
+ */
+export const linkQuotationCustomer = impl.linkQuotationCustomer
 
 export const NotFoundError = impl.NotFoundError
 /** Thrown when a quotation has been approved or rejected and is now frozen. */
